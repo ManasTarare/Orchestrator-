@@ -144,4 +144,3 @@ def deterministic_route_splits(
     validation = [examples[i] for i in indices[train_end:train_end + validation_count]]
     test = [examples[i] for i in indices[train_end + validation_count:]]
     return train, validation, test
-

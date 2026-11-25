@@ -454,4 +454,3 @@ class TrainingStore:
                 (version["target"], model_version_id),
             )
         return bool(cursor.rowcount)
-

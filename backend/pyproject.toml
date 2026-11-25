@@ -23,4 +23,3 @@ mornork-calibrate = "mornork.routing.calibrate:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

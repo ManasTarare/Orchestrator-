@@ -36,6 +36,7 @@
 .training-page .metric { min-width: 0; padding: 12px; border: 1px solid var(--border-soft); border-radius: 10px; background: #fafbfe; }
 .training-page .metric span { display: block; color: var(--soft); font-size: 10px; text-transform: uppercase; letter-spacing: .09em; }
 .training-page .metric b { display: block; margin-top: 5px; color: #263750; font-size: 13px; overflow-wrap: anywhere; }
+.training-page .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
 .training-page .actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 15px; }
 .training-page .btn { padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; color: #315fd5; background: #f3f6fd; font-weight: 750; cursor: pointer; }
 .training-page .btn:hover:not(:disabled) { background: #e9efff; }
@@ -81,6 +82,7 @@
   .training-page .grid { grid-template-columns: minmax(0, 1fr); }
   .training-page .right-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
   .training-page .right-stack > .card:last-child { grid-column: 1 / -1; }
+  .training-page .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 680px) {
   .training-page main { width: calc(100% - 24px); padding: 24px 0 45px; }
@@ -93,4 +95,3 @@
   .training-page .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .training-page .actions { align-items: stretch; flex-direction: column; }
 }
-
