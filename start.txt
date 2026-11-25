@@ -1,0 +1,9 @@
+cd D:\ork\backend
+& D:\ork\.venv\Scripts\Activate.ps1
+python -m uvicorn mornork.api:app --host 127.0.0.1 --port 8765
+
+cd D:\ork\frontend
+python -m http.server 5500 --bind 127.0.0.1
+
+#frontend 
+http://127.0.0.1:5500

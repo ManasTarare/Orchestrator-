@@ -1,0 +1,18 @@
+[
+  {
+    "expert_id": "your-real-expert-id",
+    "workspace_id": "w1",
+    "name": "Finance",
+    "domain": "Finance",
+    "description": "Copy the expert's real profile description from the Experts module.",
+    "status": "Not Configured",
+    "version": 1,
+    "routing_hints": [
+      "Add representative questions based on this expert's actual scope."
+    ],
+    "model_path": "finance-v1",
+    "backend_url": "",
+    "inference_url": "",
+    "is_default": false
+  }
+]

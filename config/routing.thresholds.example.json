@@ -1,0 +1,20 @@
+{
+  "low": null,
+  "high": null,
+  "domain_recognition": null,
+  "ambiguity_gap": null,
+  "low_by_domain": {
+    "Legal": null,
+    "Finance": null,
+    "Healthcare": null,
+    "HR": null,
+    "Customer support": null
+  },
+  "high_by_domain": {
+    "Legal": null,
+    "Finance": null,
+    "Healthcare": null,
+    "HR": null,
+    "Customer support": null
+  }
+}

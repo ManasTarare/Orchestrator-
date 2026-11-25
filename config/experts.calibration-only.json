@@ -1,0 +1,57 @@
+[
+  {
+    "expert_id": "prototype-legal-v1",
+    "name": "Legal",
+    "domain": "Legal",
+    "description": "Legal information on contracts, agreements, legal rights and obligations, notices, indemnity, leases, regulations, compliance, and jurisdiction.",
+    "status": "Ready to Deploy",
+    "version": "prototype-1",
+    "routing_hints": ["Review a contract clause", "Understand notice requirements", "Ask about a legal right or obligation", "What should I check before signing this service agreement?"],
+    "inference_mode": "mornork_role",
+    "is_default": false
+  },
+  {
+    "expert_id": "prototype-finance-v1",
+    "name": "Finance",
+    "domain": "Finance",
+    "description": "Taxes, tax savings, capital gains, selling shares, investments, banking, accounting, budgets, and financial planning.",
+    "status": "Ready to Deploy",
+    "version": "prototype-1",
+    "routing_hints": ["Calculate tax implications of selling shares", "Ask about capital gains", "Plan a budget or investment", "What tax records should I gather for a stock sale?"],
+    "inference_mode": "mornork_role",
+    "is_default": false
+  },
+  {
+    "expert_id": "prototype-healthcare-v1",
+    "name": "Healthcare",
+    "domain": "Healthcare",
+    "description": "General health information about symptoms, medicine, treatment, wellness, and preparing questions for clinician appointments.",
+    "status": "Needs improvement",
+    "version": "prototype-1",
+    "routing_hints": ["General health information", "Prepare questions for a clinician"],
+    "inference_mode": "mornork_role",
+    "is_default": false
+  },
+  {
+    "expert_id": "prototype-hr-v1",
+    "name": "HR",
+    "domain": "HR",
+    "description": "Human resources, employment, employee relations, workplace policies, hiring, compensation, performance, and workplace complaints.",
+    "status": "Ready to Deploy",
+    "version": "prototype-1",
+    "routing_hints": ["Handle a performance process", "Ask about workplace policy", "Resolve an employee relations issue", "How should a manager document a workplace concern?"],
+    "inference_mode": "mornork_role",
+    "is_default": false
+  },
+  {
+    "expert_id": "prototype-support-v1",
+    "name": "Customer support",
+    "domain": "Customer support",
+    "description": "Customer support for product questions, sign-in and account access, billing, troubleshooting, technical errors, and service problems.",
+    "status": "Ready to Deploy",
+    "version": "prototype-1",
+    "routing_hints": ["Troubleshoot a product issue", "Resolve a locked account", "Ask for help using the service", "I cannot find the invoice download button."],
+    "inference_mode": "mornork_role",
+    "is_default": false
+  }
+]

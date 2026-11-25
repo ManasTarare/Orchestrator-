@@ -1,0 +1,30 @@
+{"message":"Hi, what can you do?","expected_action":"answer"}
+{"message":"Thanks, that answered my question.","expected_action":"answer"}
+{"message":"What is the capital of France?","expected_action":"answer"}
+{"message":"Can you help me organize my notes into a short checklist?","expected_action":"answer"}
+{"message":"Explain the difference between a calendar week and a work week.","expected_action":"answer"}
+{"message":"I sold shares at a profit. What tax records should I gather?","expected_action":"handoff","expected_expert_id":"prototype-finance-v1"}
+{"message":"How are capital gains from a stock sale generally calculated?","expected_action":"handoff","expected_expert_id":"prototype-finance-v1"}
+{"message":"Can you help me plan a monthly budget around variable income?","expected_action":"handoff","expected_expert_id":"prototype-finance-v1"}
+{"message":"I have a stock sale and a dividend in the same year. What financial factors should I review?","expected_action":"offer","expected_expert_id":"prototype-finance-v1"}
+{"message":"What should I review before signing this service agreement?","expected_action":"handoff","expected_expert_id":"prototype-legal-v1"}
+{"message":"Can a contractor agreement require written notice before termination?","expected_action":"handoff","expected_expert_id":"prototype-legal-v1"}
+{"message":"What does this indemnity clause mean for my business?","expected_action":"handoff","expected_expert_id":"prototype-legal-v1"}
+{"message":"I need to end a contractor agreement and want to avoid creating a workplace dispute. What should I check?","expected_action":"offer","expected_expert_id":"prototype-legal-v1"}
+{"message":"How should a manager document an ongoing performance concern?","expected_action":"handoff","expected_expert_id":"prototype-hr-v1"}
+{"message":"What steps are appropriate before changing an employee's role?","expected_action":"handoff","expected_expert_id":"prototype-hr-v1"}
+{"message":"Where can I find a fair process for handling a workplace complaint?","expected_action":"handoff","expected_expert_id":"prototype-hr-v1"}
+{"message":"A contractor's performance is poor and their agreement has a notice clause. How should we handle the process?","expected_action":"offer","expected_expert_id":"prototype-hr-v1"}
+{"message":"My account is locked after several failed sign-ins. What should I try?","expected_action":"handoff","expected_expert_id":"prototype-support-v1"}
+{"message":"The app closes whenever I open the settings page. How can I troubleshoot it?","expected_action":"handoff","expected_expert_id":"prototype-support-v1"}
+{"message":"I cannot find the invoice download button in my account. Can you help?","expected_action":"handoff","expected_expert_id":"prototype-support-v1"}
+{"message":"My sign-in is failing after a password reset and I cannot access billing. What should I check?","expected_action":"offer","expected_expert_id":"prototype-support-v1"}
+{"message":"Can we end a contractor's agreement without notice?","expected_action":"ask","expected_expert_ids":["prototype-legal-v1","prototype-hr-v1"]}
+{"message":"A worker says their contract was ended unfairly. What should we review first?","expected_action":"ask","expected_expert_ids":["prototype-legal-v1","prototype-hr-v1"]}
+{"message":"We are changing a contractor's compensation and want to understand both the agreement and workplace process.","expected_action":"ask","expected_expert_ids":["prototype-legal-v1","prototype-hr-v1"]}
+{"message":"What general factors should I discuss with my doctor about recurring headaches?","expected_action":"decline"}
+{"message":"I have a question about a medication side effect. Which information should I bring to a clinician?","expected_action":"decline"}
+{"message":"What are common questions to ask at a follow-up appointment about blood pressure?","expected_action":"decline"}
+{"message":"How do I troubleshoot a printer that will not connect to Wi-Fi?","expected_action":"handoff","expected_expert_id":"prototype-support-v1"}
+{"message":"What is a sensible way to divide household costs between roommates?","expected_action":"answer"}
+{"message":"I am unsure whether this is an employee relations issue or a contract interpretation issue.","expected_action":"ask","expected_expert_ids":["prototype-legal-v1","prototype-hr-v1"]}

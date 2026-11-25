@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#09130f">
+  <title>Mornork · Chat</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="chat.css">
+</head>
+<body class="chat-page">
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="Mornork home"><span class="brand-mark">M</span><span>MORNORK</span></a>
+    <nav class="nav" aria-label="Main navigation">
+      <a href="index.html" aria-current="page">Chat</a>
+      <a href="models.html">Models</a>
+      <a href="training.html">Training</a>
+      <a href="workflows.html">Workflows</a>
+    </nav>
+    <span class="service-state"><i></i>Local chat</span>
+  </header>
+
+  <main class="chat-shell">
+    <section class="chat-heading">
+      <p class="eyebrow">Mornork workspace</p>
+      <h1>Ask a question</h1>
+      <p>Your message is routed to the configured orchestrator or a specialist. The response shows which one answered.</p>
+    </section>
+
+    <section class="chat-surface" aria-label="Chat">
+      <form id="chat-form" class="composer">
+        <label for="message">Message</label>
+        <div class="composer-row">
+          <textarea id="message" rows="2" maxlength="10000" placeholder="Write a message…" required></textarea>
+          <button id="send-button" type="submit"><span>Send</span><span aria-hidden="true">↑</span></button>
+        </div>
+        <div class="composer-foot"><span id="chat-status">Enter a message to start.</span><span>Enter to send · Shift+Enter for a new line</span></div>
+      </form>
+
+      <div id="conversation" class="conversation" aria-live="polite" aria-relevant="additions text">
+        <div id="conversation-empty" class="conversation-empty">
+          <span class="empty-mark">M</span>
+          <strong>Your conversation will appear here</strong>
+          <span>Answers will be labeled with the model or expert that produced them.</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="api-config.js?v=20261125-catalog-startup"></script>
+  <script>
+    const form = document.getElementById("chat-form");
+    const input = document.getElementById("message");
+    const conversation = document.getElementById("conversation");
+    const emptyState = document.getElementById("conversation-empty");
+    const sendButton = document.getElementById("send-button");
+    const statusLine = document.getElementById("chat-status");
+    let lastDecision = null;
+    let pendingRequest = null;
+
+    function messageId() {
+      return globalThis.crypto?.randomUUID?.() || `m-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    }
+    function addMessage(role, text = "") {
+      emptyState.hidden = true;
+      const article = document.createElement("article");
+      article.className = `message ${role}`;
+      const label = document.createElement("div");
+      label.className = "message-label";
+      label.textContent = role === "user" ? "You" : "Mornork";
+      const body = document.createElement("div");
+      body.className = "message-body";
+      body.textContent = text;
+      article.append(label, body);
+      if (role === "assistant") {
+        const source = document.createElement("div");
+        source.className = "answer-source";
+        source.textContent = "Preparing answer…";
+        article.append(source);
+      }
+      conversation.append(article);
+      conversation.scrollTop = conversation.scrollHeight;
+      return article;
+    }
+    function setAnswer(article, text, source) {
+      article.querySelector(".message-body").textContent = text || "No answer was returned.";
+      article.querySelector(".answer-source").textContent = source;
+      article.classList.remove("loading");
+      conversation.scrollTop = conversation.scrollHeight;
+    }
+    function sourceLabel(reply) {
+      if (reply.by === "Mornork fallback") return "Answered by Mornork fallback";
+      if (reply.by === "Mornork") {
+        const version = lastDecision?.orchestrator_model_version;
+        return version ? `Answered by ORK orchestrator · v${version}` : "Answered by ORK orchestrator";
+      }
+      const version = reply.version ? ` · v${reply.version}` : "";
+      const prototype = reply.prototype ? " · prompt prototype" : "";
+      return `Answered by expert · ${reply.by || reply.name || "Specialist"}${version}${prototype}`;
+    }
+    function handleChoice(event) {
+      const button = event.target.closest("button[data-expert]");
+      if (!button || !pendingRequest) return;
+      const choice = button.dataset.expert;
+      document.querySelectorAll(".expert-choice-row button").forEach(item => item.disabled = true);
+      const selected = addMessage("user", `Use ${button.textContent}`);
+      selected.classList.add("choice-selection");
+      submitRequest(pendingRequest.message, pendingRequest.context, choice);
+    }
+    async function readEvents(response, onEvent) {
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || `Request failed (${response.status})`);
+      }
+      if (!response.body) throw new Error("The chat response stream is unavailable.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const consume = block => {
+        let name = "message", data = "";
+        for (const line of block.split(/\r?\n/)) {
+          if (line.startsWith("event:")) name = line.slice(6).trim();
+          else if (line.startsWith("data:")) data += line.slice(5).trim();
+        }
+        if (data) { try { onEvent(name, JSON.parse(data)); } catch { /* Ignore malformed stream events. */ } }
+      };
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const blocks = buffer.split(/\r?\n\r?\n/);
+        buffer = blocks.pop() || "";
+        blocks.forEach(consume);
+        if (done) break;
+      }
+      if (buffer.trim()) consume(buffer);
+    }
+    async function submitRequest(message, context = null, userChoice = null) {
+      const isNew = !context;
+      const requestContext = context || {
+        message,
+        workspace_id: "w1",
+        message_id: messageId(),
+      };
+      if (isNew) addMessage("user", message);
+      const responseBubble = addMessage("assistant");
+      responseBubble.classList.add("loading");
+      const body = responseBubble.querySelector(".message-body");
+      body.textContent = "Routing your message…";
+      let answered = false;
+      lastDecision = null;
+      pendingRequest = null;
+      sendButton.disabled = true;
+      input.disabled = true;
+      statusLine.textContent = "Waiting for the model…";
+      try {
+        const payload = { ...requestContext, ...(userChoice ? { user_choice: userChoice } : {}) };
+        await readEvents(await fetch(mornorkApiUrl("/mornork/chat"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }), (eventName, data) => {
+          if (eventName === "routing") {
+            lastDecision = data.decision || null;
+            body.textContent = "Preparing your answer…";
+          } else if (eventName === "handoff") {
+            body.textContent = `Connecting to ${data.name || "a specialist"}…`;
+          } else if (eventName === "answer") {
+            const target = answered ? addMessage("assistant") : responseBubble;
+            setAnswer(target, data.text, sourceLabel(data));
+            answered = true;
+          } else if (eventName === "workflow_response") {
+            const target = answered ? addMessage("assistant") : responseBubble;
+            setAnswer(target, data.text, `Answered by workflow aggregator · ${data.by || "Aggregator"}`);
+            answered = true;
+          } else if (eventName === "ask_user") {
+            pendingRequest = { message, context: requestContext };
+            setAnswer(responseBubble, "Choose a specialist for this request.", "Mornork orchestrator · specialist selection");
+            const row = document.createElement("div");
+            row.className = "expert-choice-row";
+            for (const option of data.options || []) {
+              const button = document.createElement("button");
+              button.type = "button"; button.dataset.expert = option.expert_id; button.textContent = option.name;
+              row.append(button);
+            }
+            if (data.allow_both && (data.options || []).length > 1) {
+              const button = document.createElement("button");
+              button.type = "button"; button.dataset.expert = "both"; button.textContent = "Both specialists"; row.append(button);
+            }
+            row.addEventListener("click", handleChoice);
+            responseBubble.append(row);
+          } else if (eventName === "decline") {
+            setAnswer(responseBubble, data.text, "Answered by ORK orchestrator · no specialist available");
+            answered = true;
+          } else if (eventName === "error") {
+            setAnswer(responseBubble, data.message || "The backend could not complete the request.", "Request failed");
+            answered = true;
+          }
+        });
+        if (!answered && !pendingRequest) setAnswer(responseBubble, "The request finished without an answer.", "No model response");
+        statusLine.textContent = "Ready for your next message.";
+      } catch (error) {
+        setAnswer(responseBubble, error.message || "Could not reach the FastAPI backend.", "Request failed");
+        statusLine.textContent = "Could not reach the backend.";
+      } finally {
+        sendButton.disabled = false;
+        input.disabled = false;
+        input.focus();
+      }
+    }
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text || sendButton.disabled) return;
+      input.value = "";
+      submitRequest(text);
+    });
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+  </script>
+</body>
+</html>

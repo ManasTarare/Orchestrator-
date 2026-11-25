@@ -1,0 +1,2 @@
+# Install the project with routing and training dependencies from pyproject.toml.
+-e .[routing,training]

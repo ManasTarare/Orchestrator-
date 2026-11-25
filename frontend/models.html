@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a1512">
+  <title>Mornork · Models</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="models.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="Mornork home"><span class="brand-mark">M</span><span>MORNORK</span></a>
+    <nav class="nav" aria-label="Main navigation">
+      <a href="index.html">Chat</a>
+      <a href="models.html" aria-current="page">Models</a>
+      <a href="training.html">Training</a>
+      <a href="workflows.html">Workflows</a>
+    </nav>
+    <span class="service-state"><i></i><span id="catalog-state">Loading catalog</span></span>
+  </header>
+
+  <main class="page-shell">
+    <section class="page-heading">
+      <div>
+        <p class="eyebrow">Model library</p>
+        <h1>Models</h1>
+        <p class="intro">Models and saved run metrics from your configured S3 catalog. Routing scores and answer-quality scores measure different tasks, so compare them within their own type.</p>
+      </div>
+      <div class="model-count"><span id="model-count">—</span><small>models in S3</small></div>
+    </section>
+
+    <section id="catalog-error" class="catalog-error" role="status" hidden>
+      <span class="error-mark">!</span>
+      <div><strong>Model catalog unavailable</strong><p id="catalog-error-message">Check the backend connection and S3 permissions.</p></div>
+    </section>
+
+    <section id="catalog-sync" class="catalog-sync" role="status" hidden></section>
+    <section id="model-grid" class="model-grid" aria-live="polite" aria-busy="true">
+      <div class="loading-card"><span class="loader"></span><span>Loading models from S3…</span></div>
+    </section>
+  </main>
+
+  <script src="api-config.js?v=20261125-catalog-startup"></script>
+  <script>
+    const $ = id => document.getElementById(id);
+    const query = new URLSearchParams(location.search);
+    let syncTimer = null;
+    const workspace = query.get("workspace_id") || "w1";
+    const esc = value => String(value ?? "—").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[char]));
+    const percent = value => value == null || !Number.isFinite(Number(value)) ? null : `${(Number(value) * 100).toFixed(1)}%`;
+    const fixed = (value, digits = 4) => value == null || !Number.isFinite(Number(value)) ? null : Number(value).toFixed(digits);
+
+    async function loadCatalog() {
+      const grid = $("model-grid");
+      const state = $("catalog-state");
+      const error = $("catalog-error");
+      error.hidden = true;
+      $("catalog-sync").hidden = true;
+      if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+      state.textContent = "Loading catalog";
+      grid.setAttribute("aria-busy", "true");
+      try {
+        const data = await window.fetchMornorkModelCatalog({ workspaceId: workspace });
+        const models = Array.isArray(data.models) ? data.models : [];
+        $("model-count").textContent = String(models.length).padStart(2, "0");
+        if (data.sync_pending) {
+          $("catalog-sync").textContent = "Uploading completed, evaluated local models to S3. This uses the saved checkpoint and metrics; it does not train or evaluate again.";
+          $("catalog-sync").className = "catalog-sync pending";
+          $("catalog-sync").hidden = false;
+          syncTimer = setTimeout(loadCatalog, 15000);
+        } else if (data.sync_error) {
+          $("catalog-sync").textContent = data.sync_error + " Models remain listed only after their artifacts are present in S3.";
+          $("catalog-sync").className = "catalog-sync error";
+          $("catalog-sync").hidden = false;
+        }
+        state.textContent = "S3 connected";
+        grid.replaceChildren();
+        if (!models.length) {
+          grid.innerHTML = '<div class="empty-state"><span class="empty-icon">M</span><h2>No models found</h2><p>No model versions are present in the configured S3 catalog.</p></div>';
+        } else {
+          models.forEach(model => grid.append(renderModel(model)));
+        }
+      } catch (requestError) {
+        state.textContent = "Disconnected";
+        $("model-count").textContent = "—";
+        error.hidden = false;
+        $("catalog-sync").hidden = true;
+        $("catalog-error-message").textContent = requestError.message || "Check the backend connection and S3 permissions.";
+        grid.replaceChildren();
+      } finally {
+        grid.setAttribute("aria-busy", "false");
+      }
+    }
+
+    function renderModel(model) {
+      const target = model.target === "orchestrator" ? "Orchestrator" : `${model.domain || "Specialist"} expert`;
+      const evaluation = model.evaluation || {};
+      const task = evaluation.task_metrics || {};
+      const isRouter = model.target === "orchestrator" || task.task_type === "route_classification";
+      const split = String(task.split || evaluation.test_split || "").toLowerCase();
+      const examplesEvaluated = Number(task.examples_evaluated || evaluation.test_examples_evaluated || 0);
+      const evaluated = examplesEvaluated > 0 && ["test", "validation"].includes(split);
+      const splitLabel = split ? split.replaceAll("_", " ") : "saved";
+      const status = model.active ? "In use" : model.can_activate ? "Ready to activate" : evaluated ? "Evaluated" : "Stored in S3";
+      const card = document.createElement("article");
+      card.className = "model-card";
+
+      const metricRows = [];
+      if (examplesEvaluated > 0) metricRows.push([splitLabel + (isRouter ? " messages" : " examples"), String(examplesEvaluated)]);
+      if (isRouter) {
+        metricRows.push(["Route accuracy", percent(task.accuracy)], ["Macro precision", percent(task.macro_precision)], ["Macro recall", percent(task.macro_recall)], ["Macro F1", percent(task.macro_f1)]);
+      } else {
+        metricRows.push(
+          ["Exact match", percent(task.normalized_exact_match ?? task.exact_match_accuracy)],
+          ["ROUGE-L F1", percent(task.rouge_l_f1 ?? task.rouge_l)],
+          ["Token precision", percent(task.token_precision)],
+          ["Token recall", percent(task.token_recall)],
+          ["Token F1", percent(task.token_f1)],
+        );
+        if (task.numeric_examples != null) metricRows.push(["Numeric within 1%", percent(task.numeric_accuracy_within_1pct)]);
+      }
+      if (evaluation.test_loss != null) metricRows.push(["Test loss", fixed(evaluation.test_loss)]);
+      if (evaluation.test_perplexity != null) metricRows.push(["Test perplexity", fixed(evaluation.test_perplexity, 2)]);
+      if (evaluation.eval_loss != null) metricRows.push(["Validation loss", fixed(evaluation.eval_loss)]);
+      const usableMetrics = metricRows.filter(([, value]) => value != null);
+      const metrics = usableMetrics.length
+        ? `<dl class="metric-grid">${usableMetrics.map(([label, value]) => `<div class="metric"><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>`
+        : '<p class="no-metrics">No held-out evaluation metrics are recorded for this model.</p>';
+
+      const confusion = renderConfusion(task);
+      const updated = model.last_modified ? new Date(model.last_modified).toLocaleString() : "Not recorded";
+      const detailRows = [
+        ["Model ID", model.id],
+        ["Training method", model.approach || "Not recorded"],
+        ["Architecture", model.architecture || "Not recorded"],
+        ["S3 artifact", model.artifact_uri || "Not recorded"],
+        ["Last updated", updated],
+      ];
+
+      card.innerHTML = `
+        <div class="card-topline"><span class="model-type">${esc(target)}</span><span class="model-status ${model.active ? "active" : evaluated ? "evaluated" : ""}">${esc(status)}</span></div>
+        <div class="model-title-row"><div><h2>${esc(model.model_name || model.id)}</h2><p class="model-subtitle">Version ${esc(model.version || "1")} <span>·</span> ${esc(model.domain || (isRouter ? "Routing" : "Specialist domain"))}</p></div><span class="version-mark">v${esc(model.version || "1")}</span></div>
+        <section class="details-block"><h3>Model details</h3><dl class="details-grid">${detailRows.map(([label, value]) => `<div class="detail"><dt>${esc(label)}</dt><dd title="${esc(value)}">${esc(value)}</dd></div>`).join("")}</dl></section>
+        <section class="evaluation-block"><div class="section-title"><h3>Training evaluation</h3><span>${evaluated ? (splitLabel === "test" ? "Held-out test" : "Validation") : "Saved metrics"}</span></div>${metrics}${confusion}</section>`;
+      return card;
+    }
+
+    function renderConfusion(task) {
+      let data = task.confusion_matrix ?? task.confusion_matrix_json ?? task.eval_confusion_matrix_json;
+      if (typeof data === "string") { try { data = JSON.parse(data); } catch { return ""; } }
+      if (data?.confusion_matrix) data = data.confusion_matrix;
+      if (!data || task.task_type !== "route_classification") return "";
+      const labels = Array.isArray(data.labels) ? data.labels.map(String) : [];
+      const matrix = Array.isArray(data.matrix) ? data.matrix : Array.isArray(data.rows) ? data.rows : [];
+      if (!labels.length || !matrix.length) return "";
+      const header = labels.map(label => `<th scope="col">${esc(label)}</th>`).join("");
+      const rows = matrix.map((row, index) => `<tr><th scope="row">${esc(labels[index] || `Class ${index + 1}`)}</th>${labels.map((_, column) => `<td class="${index === column ? "diagonal" : ""}">${Number(row?.[column] || 0)}</td>`).join("")}</tr>`).join("");
+      return `<details class="confusion"><summary>Route confusion matrix</summary><div class="table-scroll"><table><thead><tr><th scope="col">Actual ↓ / predicted →</th>${header}</tr></thead><tbody>${rows}</tbody></table></div></details>`;
+    }
+
+    loadCatalog();
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,63 @@
+{
+  "example_count": 30,
+  "correct_count": 20,
+  "in_sample_accuracy": 0.6666666666666666,
+  "by_expected_action": {
+    "answer": {
+      "total": 6,
+      "correct": 6
+    },
+    "handoff": {
+      "total": 13,
+      "correct": 9
+    },
+    "offer": {
+      "total": 4,
+      "correct": 0
+    },
+    "ask": {
+      "total": 4,
+      "correct": 3
+    },
+    "decline": {
+      "total": 3,
+      "correct": 2
+    }
+  },
+  "thresholds": {
+    "low": 0.2627326610807379,
+    "high": 0.2660623494578274,
+    "domain_recognition": 0.1847868929049425,
+    "ambiguity_gap": 0.18896309026300467,
+    "low_by_domain": {},
+    "high_by_domain": {}
+  },
+  "note": "In-sample fit only. Review on a separate labeled validation set before use.",
+  "validation": {
+    "example_count": 12,
+    "correct_count": 9,
+    "in_sample_accuracy": 0.75,
+    "by_expected_action": {
+      "answer": {
+        "total": 2,
+        "correct": 2
+      },
+      "handoff": {
+        "total": 5,
+        "correct": 4
+      },
+      "ask": {
+        "total": 1,
+        "correct": 1
+      },
+      "decline": {
+        "total": 2,
+        "correct": 2
+      },
+      "offer": {
+        "total": 2,
+        "correct": 0
+      }
+    }
+  }
+}

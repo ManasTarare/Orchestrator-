@@ -1,0 +1,12 @@
+{"message":"Hello there.","expected_action":"answer"}
+{"message":"Please summarize these notes into three bullets.","expected_action":"answer"}
+{"message":"I sold an investment at a gain. What documents will an accountant usually ask me for?","expected_action":"handoff","expected_expert_id":"prototype-finance-v1"}
+{"message":"What should I consider when estimating quarterly tax payments?","expected_action":"handoff","expected_expert_id":"prototype-finance-v1"}
+{"message":"Can you explain what a renewal clause does in a commercial lease?","expected_action":"handoff","expected_expert_id":"prototype-legal-v1"}
+{"message":"What is a reasonable process for investigating a complaint between coworkers?","expected_action":"handoff","expected_expert_id":"prototype-hr-v1"}
+{"message":"An employee has raised a concern about a contract term and how it was applied at work. Who should review it?","expected_action":"ask","expected_expert_ids":["prototype-legal-v1","prototype-hr-v1"]}
+{"message":"I cannot reset my password because the verification email never arrives.","expected_action":"handoff","expected_expert_id":"prototype-support-v1"}
+{"message":"My health question concerns a rash that keeps returning. What should I ask my clinician?","expected_action":"decline"}
+{"message":"What should I know before asking a clinician about a new prescription?","expected_action":"decline"}
+{"message":"I am considering a contract change that also affects the team's work schedule.","expected_action":"offer","expected_expert_id":"prototype-legal-v1"}
+{"message":"A customer cannot sign in and also sees an unexpected subscription charge.","expected_action":"offer","expected_expert_id":"prototype-support-v1"}

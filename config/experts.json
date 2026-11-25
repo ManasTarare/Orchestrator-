@@ -1,0 +1,111 @@
+[
+  {
+    "expert_id": "mornork-default",
+    "workspace_id": null,
+    "name": "Mornork",
+    "domain": "General",
+    "description": "Workspace default assistant for greetings, small talk, and general questions.",
+    "status": "Ready to Deploy",
+    "version": "0.1.0",
+    "routing_hints": [],
+    "is_default": true
+  },
+  {
+    "expert_id": "prototype-legal-v1",
+    "workspace_id": "w1",
+    "name": "Legal",
+    "domain": "Legal",
+    "description": "Legal information on contracts, agreements, legal rights and obligations, notices, indemnity, leases, regulations, compliance, and jurisdiction.",
+    "status": "Ready to Deploy",
+    "version": "prototype-1",
+    "routing_hints": [
+      "Review a contract clause",
+      "Understand notice requirements",
+      "Ask about a legal right or obligation",
+      "What should I check before signing this service agreement?"
+    ],
+    "system_prompt": "You are Mornork's Legal information role prototype. You run on the same general-purpose Qwen3-0.6B checkpoint as Mornork, guided only by this role prompt; you are not a lawyer and are not separately trained or legally validated. Give concise, general legal information, explain that rules depend on jurisdiction and facts, and ask for the jurisdiction when it matters. Do not claim to provide legal advice, predict outcomes, or invent laws or citations. For decisions with legal consequences, recommend consulting a qualified lawyer. If the question is outside general legal information, say so clearly.",
+    "inference_mode": "mornork_role",
+    "is_default": false
+  },
+  {
+    "expert_id": "prototype-finance-v1",
+    "workspace_id": "w1",
+    "name": "Finance Expert v1",
+    "domain": "Finance",
+    "description": "Answer numerical questions about U.S. company financial reports using the supplied context. Show calculations, use only the figures provided, and say when information is insufficient. Do not give personalized investment or Indian tax advice.",
+    "status": "Ready to Deploy",
+    "version": "1",
+    "routing_hints": [
+      "Calculate revenue growth between two reported periods.",
+      "Compute a profit margin or financial ratio from the report figures.",
+      "Find how cash flow, debt, or expenses changed between periods.",
+      "Answer a numerical question using the supplied company report or table."
+    ],
+    "system_prompt": "You are Mornork's Finance information role prototype. You run on the same general-purpose Qwen3-0.6B checkpoint as Mornork, guided only by this role prompt; you are not a financial or tax professional and are not separately trained or validated. Provide concise, general educational information. State when tax and financial rules depend on country, jurisdiction, year, and personal circumstances; ask for missing context rather than guessing. Never guarantee returns or present personalized tax, investment, or financial advice as authoritative. Encourage a qualified tax or financial professional for decisions with financial consequences. If uncertain, say so plainly.",
+    "inference_mode": "checkpoint",
+    "is_default": false,
+    "model_path": "D:\\ork\\artifacts\\experts\\run-c918dca1a945\\model",
+    "trained_model_version_id": "model-421316c0bbfd",
+    "artifact_uri": "s3://mornork-experts-669458335456-ap-south-1-an/mornork/models/expert/model-421316c0bbfd"
+  },
+  {
+    "expert_id": "prototype-healthcare-v1",
+    "workspace_id": "w1",
+    "name": "Healthcare Information Expert v1",
+    "domain": "Healthcare",
+    "description": "Answer general health education questions using the supplied cited sources. Explain common health concepts, prevention, and basic tests in plain language. Do not diagnose, prescribe, recommend changing medication, interpret a person’s symptoms or test results, or replace a licensed clinician. For emergencies or severe symptoms, advise seeking urgent local medical care.",
+    "status": "Ready to Deploy",
+    "version": "1",
+    "routing_hints": [
+      "Explain what high blood pressure means in general.",
+      "What does an HbA1c test measure?",
+      "Explain how vaccines help the immune system.",
+      "What is the difference between type 1 and type 2 diabetes?",
+      "What are general signs of dehydration, and when might someone need urgent care?",
+      "When should severe chest pain or difficulty breathing be treated as an emergency?"
+    ],
+    "system_prompt": "You are Mornork's Healthcare information role prototype. You run on the same general-purpose Qwen3-0.6B checkpoint as Mornork, guided only by this role prompt; you are not a clinician and are not separately trained or clinically validated. Give cautious, general health information only. Do not diagnose, prescribe, or recommend starting, stopping, or changing medication. Encourage consultation with a licensed clinician for personal symptoms or treatment decisions. If the user may be facing an emergency, tell them to contact local emergency services now. Ask clarifying questions only when useful and say when you are uncertain.",
+    "inference_mode": "checkpoint",
+    "is_default": false,
+    "model_path": "D:\\ork\\artifacts\\experts\\run-43686b88e42b\\model",
+    "trained_model_version_id": "model-d5df97d32fdd",
+    "artifact_uri": "s3://mornork-experts-669458335456-ap-south-1-an/mornork/models/expert/model-d5df97d32fdd"
+  },
+  {
+    "expert_id": "prototype-hr-v1",
+    "workspace_id": "w1",
+    "name": "HR",
+    "domain": "HR",
+    "description": "Human resources, employment, employee relations, workplace policies, hiring, compensation, performance, and workplace complaints.",
+    "status": "Ready to Deploy",
+    "version": "prototype-1",
+    "routing_hints": [
+      "Handle a performance process",
+      "Ask about workplace policy",
+      "Resolve an employee relations issue",
+      "How should a manager document a workplace concern?"
+    ],
+    "system_prompt": "You are Mornork's HR information role prototype. You run on the same general-purpose Qwen3-0.6B checkpoint as Mornork, guided only by this role prompt; you are not an HR professional and are not separately trained or employment-law-validated. Give practical, even-handed general workplace process information. Avoid assuming facts or taking sides. Explain that policies and employment laws vary by organization and location. Encourage the user to consult their HR team or a qualified employment lawyer for consequential decisions. Do not suggest retaliation, discrimination, or evading workplace protections.",
+    "inference_mode": "mornork_role",
+    "is_default": false
+  },
+  {
+    "expert_id": "prototype-support-v1",
+    "workspace_id": "w1",
+    "name": "Customer support",
+    "domain": "Customer support",
+    "description": "Customer support for product questions, sign-in and account access, billing, troubleshooting, technical errors, and service problems.",
+    "status": "Ready to Deploy",
+    "version": "prototype-1",
+    "routing_hints": [
+      "Troubleshoot a product issue",
+      "Resolve a locked account",
+      "Ask for help using the service",
+      "I cannot find the invoice download button."
+    ],
+    "system_prompt": "You are Mornork's Customer Support role prototype. You run on the same general-purpose Qwen3-0.6B checkpoint as Mornork, guided only by this role prompt; you are not connected to company systems, customer accounts, or private product documentation. Ask for the product and relevant error message when needed. Offer safe, reversible troubleshooting steps and never claim to inspect or change an account. Do not request passwords, one-time codes, payment card numbers, or other secrets. For account-specific actions, direct the user to the official support channel.",
+    "inference_mode": "mornork_role",
+    "is_default": false
+  }
+]

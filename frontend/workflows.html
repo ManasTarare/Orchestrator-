@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#09130f">
+  <title>Mornork · Workflows</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="workflows.css">
+</head>
+<body class="workflow-page">
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="Mornork home"><span class="brand-mark">M</span><span>MORNORK</span></a>
+    <nav class="nav" aria-label="Main navigation">
+      <a href="index.html">Chat</a>
+      <a href="models.html">Models</a>
+      <a href="training.html">Training</a>
+      <a href="workflows.html" aria-current="page">Workflows</a>
+    </nav>
+    <span class="service-state"><i></i><span id="workflow-state">Loading models</span></span>
+  </header>
+
+  <main class="workflow-shell">
+    <section class="workflow-heading">
+      <div>
+        <p class="eyebrow">Routing architecture</p>
+        <h1>Workflow</h1>
+        <p>Route requests to trained specialist models from S3. Use each model’s Activate or Deactivate control to change routing.</p>
+      </div>
+      <output id="workflow-message" class="workflow-message" aria-live="polite"></output>
+    </section>
+
+    <section class="diagram-frame" aria-label="Model routing diagram">
+      <div class="diagram-viewport">
+        <svg id="topology-svg" role="img" aria-label="Request routing through the ORK orchestrator, S3 specialists, model registry, and aggregator">
+          <text x="40" y="60" fill="#9bb0a2">Loading the S3 model catalog…</text>
+        </svg>
+      </div>
+    </section>
+    <p class="diagram-note">Only specialist models stored in S3 appear here. Models with saved held-out results from training are ready to activate; no second evaluation is needed.</p>
+  </main>
+
+  <script src="api-config.js?v=20261125-catalog-startup"></script>
+  <script>
+    const svg = document.getElementById("topology-svg");
+    const message = document.getElementById("workflow-message");
+    const app = { models: [], orchestrator: null };
+    let catalogSyncTimer = null;
+
+    const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[ch]));
+    const routeUrl = path => mornorkApiUrl(path);
+    function setMessage(text, error = false) {
+      message.textContent = text;
+      message.classList.toggle("error", error);
+      message.classList.toggle("visible", Boolean(text));
+    }
+    async function api(path, options = {}) {
+      const response = await fetch(routeUrl(path), { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
+      return data;
+    }
+    async function loadCatalog() {
+      if (catalogSyncTimer) { clearTimeout(catalogSyncTimer); catalogSyncTimer = null; }
+      document.getElementById("workflow-state").textContent = "Loading models";
+      try {
+        const data = await window.fetchMornorkModelCatalog();
+        app.models = (data.models || []).filter(model => model.target === "expert");
+        app.orchestrator = (data.models || []).find(model => model.target === "orchestrator" && model.active) || null;
+        document.getElementById("workflow-state").textContent = data.sync_pending
+          ? "Syncing completed S3 models"
+          : "S3 · " + app.models.length + " specialists";
+        if (data.sync_pending) catalogSyncTimer = setTimeout(loadCatalog, 15000);
+        if (data.sync_error) setMessage(data.sync_error, true);
+        renderDiagram();
+      } catch (error) {
+        document.getElementById("workflow-state").textContent = "Catalog unavailable";
+        setMessage(error.message || "Could not load the S3 model catalog.", true);
+        renderDiagram();
+      }
+    }
+    function renderDiagram() {
+      const models = app.models;
+      const width = 1180, firstY = 128, gap = 94, nodeX = 620, nodeW = 340, nodeH = 76;
+      const height = firstY + Math.max(models.length - 1, 0) * gap + 225;
+      const centerY = firstY + Math.max(models.length - 1, 0) * gap / 2 + nodeH / 2;
+      const request = { x: 34, y: centerY - 35, w: 142, h: 70 };
+      const ork = { x: 235, y: centerY - 58, w: 235, h: 116 };
+      const aggregator = { x: 1010, y: centerY - 35, w: 145, h: 70 };
+      const lowerY = height - 101;
+      const registry = { x: 235, y: lowerY, w: 235, h: 66 };
+      const fallback = { x: 620, y: lowerY, w: 340, h: 66 };
+
+      const specialistPaths = models.map((model, index) => {
+        const y = firstY + index * gap + nodeH / 2;
+        const endX = model.active ? nodeX : nodeX - 22;
+        const activeClass = model.active ? "connected" : "disconnected";
+        const marker = model.active ? ' marker-end="url(#arrow-on)"' : "";
+        return '<path class="connector ' + activeClass + '" d="M ' + (ork.x + ork.w) + " " + (ork.y + ork.h / 2) +
+          " C 535 " + (ork.y + ork.h / 2) + ", 560 " + y + ", " + endX + " " + y + '"' + marker + '/>' +
+          '<circle class="route-handle ' + (model.active ? "on" : "off") + '" cx="' + endX + '" cy="' + y + '" r="6"/>';
+      }).join("");
+
+      const specialistNodes = models.map((model, index) => {
+        const y = firstY + index * gap;
+        const active = Boolean(model.active);
+        const ready = Boolean(model.can_activate || active);
+        const status = active ? "ACTIVE" : ready ? "READY" : "NO SAVED EVALUATION";
+        const action = active ? "Deactivate" : ready ? "Activate" : "Unavailable";
+        const disabled = ready ? "" : " disabled";
+        return '<g class="specialist-node ' + (active ? "active" : "") + " " + (ready ? "ready" : "locked") + '" data-specialist-id="' +
+          escapeHtml(model.id) + '">' +
+          '<rect class="specialist-card" x="' + nodeX + '" y="' + y + '" width="' + nodeW + '" height="' + nodeH + '" rx="13"/>' +
+          '<text class="specialist-name" x="' + (nodeX + 17) + '" y="' + (y + 29) + '">' + escapeHtml(model.model_name || model.id) + '</text>' +
+          '<text class="specialist-meta" x="' + (nodeX + 17) + '" y="' + (y + 53) + '">' + escapeHtml(model.domain || "Specialist") + " · " + status + " · v" + escapeHtml(model.version || "1") + '</text>' +
+          '<g class="route-toggle' + disabled + '" data-route-toggle="' + escapeHtml(model.id) + '" role="button" tabindex="' + (ready ? "0" : "-1") +
+          '" aria-disabled="' + (ready ? "false" : "true") + '" aria-label="' + action + " " + escapeHtml(model.model_name || model.id) + '">' +
+          '<rect x="' + (nodeX + 236) + '" y="' + (y + 22) + '" width="91" height="32" rx="9"/>' +
+          '<text x="' + (nodeX + 281) + '" y="' + (y + 43) + '" text-anchor="middle">' + action + '</text></g></g>';
+      }).join("");
+
+      const activeConnections = models.map((model, index) => {
+        if (!model.active) return "";
+        const y = firstY + index * gap + nodeH / 2;
+        return '<path class="connector connected to-aggregator" d="M ' + (nodeX + nodeW) + " " + y +
+          " C 985 " + y + ", 985 " + (aggregator.y + aggregator.h / 2) + ", " + aggregator.x + " " + (aggregator.y + aggregator.h / 2) +
+          '" marker-end="url(#arrow-on)"/>';
+      }).join("");
+
+      const empty = models.length ? "" :
+        '<text class="empty-message" x="' + nodeX + '" y="' + (firstY + 35) + '">No specialist models were found in the configured S3 catalog.</text>';
+      const orkInfo = app.orchestrator
+        ? escapeHtml(app.orchestrator.model_name) + " · v" + escapeHtml(app.orchestrator.version || "1")
+        : "Routing policy orchestrator";
+      const hint = models.length
+        ? "Use the button on each model to add or remove it from routing."
+        : "Completed models appear here after they are stored in the configured S3 catalog.";
+
+      svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+      svg.setAttribute("aria-label", "Request routing through the ORK orchestrator, S3 specialists, model registry, and aggregator");
+      svg.innerHTML = [
+        '<defs><marker id="arrow-on" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z"/></marker>',
+        '<marker id="arrow-muted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z"/></marker></defs>',
+        '<text class="diagram-kicker" x="' + nodeX + '" y="76">TOP-K SPECIALIST MODELS · S3</text>',
+        '<path class="connector fixed" d="M ' + (request.x + request.w) + " " + centerY + " L " + ork.x + " " + centerY + '" marker-end="url(#arrow-muted)"/>',
+        specialistPaths, activeConnections,
+        '<path class="connector registry-link" d="M ' + (registry.x + registry.w / 2) + " " + registry.y + " L " + (registry.x + registry.w / 2) + " " + (ork.y + ork.h) + '" marker-end="url(#arrow-muted)"/>',
+        '<path class="fallback-link" d="M ' + (registry.x + registry.w) + " " + (registry.y + registry.h / 2) + " L " + fallback.x + " " + (fallback.y + fallback.h / 2) +
+          " M " + (fallback.x + fallback.w) + " " + (fallback.y + fallback.h / 2) + " C 990 " + (fallback.y + fallback.h / 2) + ", 990 " + (aggregator.y + aggregator.h) + ", " + (aggregator.x + aggregator.w / 2) + " " + (aggregator.y + aggregator.h) + '"/>',
+        '<g class="flow-node request-node"><rect x="' + request.x + '" y="' + request.y + '" width="' + request.w + '" height="' + request.h + '" rx="13"/><text class="node-title" x="' + (request.x + request.w / 2) + '" y="' + (request.y + 31) + '" text-anchor="middle">Request</text><text class="node-subtitle" x="' + (request.x + request.w / 2) + '" y="' + (request.y + 51) + '" text-anchor="middle">User message</text></g>',
+        '<g class="flow-node orchestrator-node"><rect x="' + ork.x + '" y="' + ork.y + '" width="' + ork.w + '" height="' + ork.h + '" rx="15"/><text class="node-overline" x="' + (ork.x + 18) + '" y="' + (ork.y + 26) + '">ROUTING MODEL</text><text class="node-title" x="' + (ork.x + 18) + '" y="' + (ork.y + 54) + '">ORK orchestrator</text><text class="node-subtitle" x="' + (ork.x + 18) + '" y="' + (ork.y + 78) + '">Plans and selects top-K</text><text class="node-foot" x="' + (ork.x + 18) + '" y="' + (ork.y + 99) + '">' + orkInfo + '</text></g>',
+        specialistNodes, empty,
+        '<g class="flow-node aggregator-node"><rect x="' + aggregator.x + '" y="' + aggregator.y + '" width="' + aggregator.w + '" height="' + aggregator.h + '" rx="13"/><text class="node-title" x="' + (aggregator.x + aggregator.w / 2) + '" y="' + (aggregator.y + 30) + '" text-anchor="middle">Aggregator</text><text class="node-subtitle" x="' + (aggregator.x + aggregator.w / 2) + '" y="' + (aggregator.y + 49) + '" text-anchor="middle">Checks · responds</text></g>',
+        '<g class="flow-node registry-node"><rect x="' + registry.x + '" y="' + registry.y + '" width="' + registry.w + '" height="' + registry.h + '" rx="13"/><text class="node-title" x="' + (registry.x + registry.w / 2) + '" y="' + (registry.y + 28) + '" text-anchor="middle">Expert registry</text><text class="node-subtitle" x="' + (registry.x + registry.w / 2) + '" y="' + (registry.y + 48) + '" text-anchor="middle">S3 · readiness · capabilities</text></g>',
+        '<g class="flow-node fallback-node"><rect x="' + fallback.x + '" y="' + fallback.y + '" width="' + fallback.w + '" height="' + fallback.h + '" rx="13"/><text class="node-title" x="' + (fallback.x + fallback.w / 2) + '" y="' + (fallback.y + 28) + '" text-anchor="middle">Larger model fallback</text><text class="node-subtitle" x="' + (fallback.x + fallback.w / 2) + '" y="' + (fallback.y + 48) + '" text-anchor="middle">Only when confidence is low</text></g>',
+        '<text class="diagram-hint" x="34" y="' + (height - 14) + '">' + hint + '</text>'
+      ].join("");
+    }
+
+    async function activate(model, enabled) {
+      try {
+        const action = enabled ? "activate" : "deactivate";
+        await api(`/api/models/${encodeURIComponent(model.id)}/${action}?workspace_id=w1`, { method: "POST" });
+        setMessage(`${model.model_name} ${enabled ? "activated" : "deactivated"}.`);
+        window.invalidateMornorkModelCatalog();
+        await loadCatalog();
+      } catch (error) {
+        setMessage(error.message || "Could not change this model's routing state.", true);
+      }
+    }
+    svg.addEventListener("click", async event => {
+      const control = event.target.closest("[data-route-toggle]");
+      if (!control) return;
+      const model = app.models.find(item => item.id === control.dataset.routeToggle);
+      if (!model) return;
+      if (!model.active && !model.can_activate) {
+        setMessage("This model has no saved held-out evaluation results yet.", true);
+        return;
+      }
+      await activate(model, !model.active);
+    });
+    svg.addEventListener("keydown", async event => {
+      const control = event.target.closest("[data-route-toggle]");
+      if (!control || !["Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      const model = app.models.find(item => item.id === control.dataset.routeToggle);
+      if (model && (model.active || model.can_activate)) await activate(model, !model.active);
+    });
+    loadCatalog();
+  </script>
+</body>
+</html>

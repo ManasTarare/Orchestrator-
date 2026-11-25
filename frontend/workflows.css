@@ -1,0 +1,58 @@
+.workflow-shell { width: min(1240px, calc(100% - 48px)); margin: 0 auto; padding: 43px 0 54px; }
+.workflow-heading { display: flex; align-items: end; justify-content: space-between; gap: 25px; margin-bottom: 19px; }
+.workflow-heading .eyebrow { margin: 0 0 10px; }
+.workflow-heading h1 { margin: 0 0 9px; font-size: clamp(32px, 4vw, 45px); letter-spacing: -.05em; }
+.workflow-heading p:last-child { max-width: 760px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.workflow-message { flex: none; min-height: 20px; color: #315fd5; font-size: 11px; text-align: right; }
+.workflow-message.error { color: var(--red); }
+.workflow-message.visible { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.diagram-frame { overflow: hidden; border: 1px solid var(--border); border-radius: 17px; background: linear-gradient(145deg, #fff, #f9fbff); box-shadow: var(--shadow); }
+.diagram-viewport { overflow: auto; max-width: 100%; padding: 14px; scrollbar-color: #c1cde0 #f3f6fb; }
+#topology-svg { display: block; width: 100%; max-width: 1180px; min-width: 900px; height: auto; margin: 0 auto; }
+#topology-svg .diagram-kicker { fill: #315fd5; font: 750 12px "Segoe UI", sans-serif; letter-spacing: 1.5px; }
+#topology-svg .connector { fill: none; stroke: #c0cbda; stroke-width: 2.2; }
+#topology-svg .connector.fixed { stroke: #8b9bb0; }
+#topology-svg .connector.connected { stroke: #315fd5; }
+#topology-svg .connector.disconnected { stroke: #bdc6d3; stroke-dasharray: 5 7; }
+#topology-svg .connector.to-aggregator { opacity: .82; }
+#topology-svg #arrow-on path { fill: #315fd5; }
+#topology-svg #arrow-muted path { fill: #8b9bb0; }
+#topology-svg .registry-link { stroke: #8b72c9; stroke-dasharray: 5 7; }
+#topology-svg .fallback-link { fill: none; stroke: #9883cb; stroke-width: 2; stroke-dasharray: 6 8; }
+#topology-svg .flow-node rect { fill: #fff; stroke: #d4deeb; stroke-width: 1.5; }
+#topology-svg .orchestrator-node rect { fill: #edf2ff; stroke: #315fd5; stroke-width: 1.8; }
+#topology-svg .aggregator-node rect { fill: #f3f0ff; stroke: #8770c4; }
+#topology-svg .registry-node rect { fill: #f2f0fb; stroke: #8770c4; }
+#topology-svg .fallback-node rect { fill: #faf8ff; stroke: #9985ca; stroke-dasharray: 7 6; }
+#topology-svg .node-title { fill: #1c2b44; font: 750 17px "Segoe UI", sans-serif; }
+#topology-svg .node-subtitle { fill: #63738b; font: 12px "Segoe UI", sans-serif; }
+#topology-svg .node-overline { fill: #315fd5; font: 750 9px "Segoe UI", sans-serif; letter-spacing: 1.3px; }
+#topology-svg .node-foot { fill: #52647c; font: 11px "Segoe UI", sans-serif; }
+#topology-svg .specialist-node rect { fill: #f7f9fd; stroke: #c8d3e2; stroke-width: 1.5; transition: fill .16s ease, stroke .16s ease; }
+#topology-svg .specialist-node.active rect { fill: #eaf7f0; stroke: #16835d; stroke-width: 2; }
+#topology-svg .specialist-node.locked rect { fill: #f6f7fa; stroke: #d4dae4; stroke-dasharray: 5 5; }
+#topology-svg .node-initial { fill: #315fd5; font: 800 15px "Segoe UI", sans-serif; }
+#topology-svg .specialist-name { fill: #1c2b44; font: 750 13px "Segoe UI", sans-serif; }
+#topology-svg .specialist-meta { fill: #6c7c92; font: 10px "Segoe UI", sans-serif; }
+#topology-svg .route-handle { fill: white; stroke: #8292a8; stroke-width: 2; pointer-events: none; }
+#topology-svg .route-handle.on { fill: #315fd5; stroke: white; }
+#topology-svg .route-toggle { cursor: pointer; }
+#topology-svg .route-toggle rect { fill: #eaf0ff; stroke: #cad8ff; stroke-width: 1; transition: fill .15s ease, stroke .15s ease; }
+#topology-svg .route-toggle text { fill: #294fb7; font: 700 11px "Segoe UI", sans-serif; pointer-events: none; }
+#topology-svg .route-toggle:hover rect, #topology-svg .route-toggle:focus rect { fill: #dce7ff; stroke: #315fd5; stroke-width: 2; }
+#topology-svg .route-toggle:focus { outline: none; }
+#topology-svg .route-toggle.disabled { cursor: not-allowed; opacity: .65; }
+#topology-svg .route-toggle.disabled rect { fill: #f2f4f8; stroke: #d4dae4; }
+#topology-svg .route-toggle.disabled text { fill: #758196; font-size: 9px; }
+#topology-svg .specialist-node.active .route-toggle rect { fill: #e8f6ef; stroke: #addbc4; }
+#topology-svg .specialist-node.active .route-toggle text { fill: #176c4b; }
+#topology-svg .empty-message { fill: #6c7c92; font: 13px "Segoe UI", sans-serif; }
+#topology-svg .diagram-hint { fill: #7d8ba0; font: 11px "Segoe UI", sans-serif; }
+.diagram-note { margin: 12px 2px 0; color: var(--soft); font-size: 11px; line-height: 1.5; }
+@media (max-width: 720px) {
+  .workflow-shell { width: calc(100% - 26px); padding: 31px 0 44px; }
+  .workflow-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .workflow-message { text-align: left; }
+  .diagram-viewport { padding: 7px; }
+  #topology-svg { min-width: 900px; }
+}

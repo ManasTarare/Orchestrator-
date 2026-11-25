@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mornork · Local model training</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="training.css">
+</head>
+<body class="training-page">
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="mark">M</span><span>MORNORK</span></a>
+    <nav class="nav"><a href="index.html">Chat</a><a href="models.html">Models</a><a href="training.html" aria-current="page">Training</a><a href="workflows.html">Workflows</a></nav>
+    <span class="pill">Local training</span>
+  </header>
+  <main>
+    <div class="eyebrow">Model studio</div>
+    <h1>Train models on this PC</h1>
+    <p class="subtitle">Create an expert model or train the AI orchestrator. Choose a pretrained base for LoRA fine-tuning, or initialize a compact Transformer from random weights. Runs and progress are saved locally.</p>
+    <div id="training-panel">
+    <div class="grid">
+      <section class="card">
+        <div class="section-head"><div><h2>New training run</h2><p class="hint">Use a broad text corpus for scratch pretraining. For instruction behavior, include prompt/response examples. Evaluation records are held out from training.</p></div></div>
+        <form id="training-form">
+          <div class="section">
+            <h3>1 · Choose what to train</h3>
+            <div class="segmented" id="target-choices">
+              <label class="choice active"><input type="radio" name="target" value="expert" checked><div><b>Domain expert</b><span>Train a Legal, Finance, Healthcare, HR, or Support model.</span></div></label>
+              <label class="choice"><input type="radio" name="target" value="orchestrator"><div><b>AI orchestrator</b><span>Train the model that chooses experts and emits routing decisions.</span></div></label>
+            </div>
+            <div class="form-grid" style="margin-top:13px">
+              <div class="field"><label for="model-name">Model name</label><input id="model-name" required minlength="3" maxlength="60" value="Finance Expert v1" placeholder="e.g. Finance Expert v1"></div>
+              <div class="field" id="domain-field"><label for="domain">Domain</label><select id="domain"><option>Finance</option><option>Legal</option><option>Healthcare</option><option>HR</option><option>Customer support</option></select></div>
+            </div>
+            <div class="field"><label for="description">Purpose and scope</label><input id="description" maxlength="500" placeholder="What should this model answer, and what should it decline?"></div>
+            <div class="field" id="routing-hints-field"><label for="routing-hints">Expert routing hints (one example request per line)</label><textarea id="routing-hints" style="min-height:78px" placeholder="What documents should I keep for a share sale?&#10;How is income tax calculated on rental income?"></textarea><small>These hints help the router decide when to use this trained expert.</small></div>
+          </div>
+          <div class="section">
+            <h3>2 · Select training approach</h3>
+            <div class="approaches" id="approach-choices">
+              <label class="choice active"><input type="radio" name="approach" value="scratch" checked><div><b>Build from scratch</b><span>Random weights plus a new tokenizer. Requires a substantial, licensed text corpus.</span></div></label>
+              <label class="choice"><input type="radio" name="approach" value="fine_tune"><div><b>Fine-tune a base model</b><span>LoRA adapts a pretrained checkpoint using your reviewed examples.</span></div></label>
+            </div>
+            <div id="base-model-field" class="field hidden" style="margin-top:13px"><label for="base-model">Base model ID or local checkpoint folder</label><input id="base-model" value="Qwen/Qwen3-0.6B" placeholder="Qwen/Qwen3-0.6B"><small>Fine-tuning downloads the base if it is not already available locally. A Hub token may be needed for gated models.</small></div>
+          </div>
+          <div class="section">
+            <h3>3 · Add training data</h3>
+            <p class="hint" id="data-format-help">Expert answer model: TXT/PDF corpus or CSV/JSONL with prompt and response columns. Use split=train, validation, test for separate holdouts; otherwise Mornork creates a fixed-seed 80/10/10 split. Rows marked approved must have approved=true.</p>
+            <div class="uploadbox">
+              <div class="field"><label for="train-file">Training corpus / examples</label><input id="train-file" type="file" accept=".txt,.csv,.jsonl,.pdf" required><div class="upload-status" id="train-upload-status">No file uploaded.</div></div>
+            </div>
+            <div class="uploadbox" style="margin-top:10px">
+              <div class="field"><label for="eval-file">Separate evaluation dataset (optional)</label><input id="eval-file" type="file" accept=".txt,.csv,.jsonl,.pdf"><div class="upload-status" id="eval-upload-status">If omitted, explicit validation/test splits are used; otherwise a fixed-seed 80/10/10 train/validation/test split is created.</div></div>
+            </div>
+            <div class="actions"><span class="hint">Inspect the parsed examples before training.</span><button class="btn" id="preview-data" type="button">Preview training records</button></div>
+            <pre id="data-preview" class="log hidden" style="max-height:240px;white-space:pre-wrap"></pre>
+          </div>
+          <div class="section">
+            <div class="section-head"><div><h3>4 · Architecture and local settings</h3><p class="hint">This first training path supports dense Transformer models. MoE is shown as a later option and is not falsely marked trainable yet.</p></div><span class="badge">Transformer</span></div>
+            <div class="field" id="model-size-field"><label for="model-size-preset">Scratch model size preset</label><select id="model-size-preset"><option value="tiny" selected>Tiny · recommended for 6 GB GPU</option><option value="small">Small</option><option value="medium">Medium</option><option value="custom">Custom architecture settings</option></select><small>Presets choose hidden width, layer count, tokenizer vocabulary, and sequence length. Fine-tuning keeps the selected base model size.</small></div>
+            <div class="form-grid">
+              <div class="field"><label for="device">Training device</label><select id="device"><option value="auto">Automatic (use CUDA if available)</option><option value="cuda">CUDA GPU</option><option value="cpu">CPU</option></select></div>
+              <div class="field"><label for="epochs">Epochs</label><input id="epochs" type="number" min="1" max="50" value="1"></div>
+              <div class="field"><label for="sequence">Sequence length</label><select id="sequence"><option>128</option><option>256</option><option>512</option><option>1024</option></select></div>
+              <div class="field"><label for="batch">Batch size</label><select id="batch"><option>1</option><option>2</option><option>4</option></select></div>
+              <div class="field"><label for="lr">Learning rate</label><input id="lr" type="number" min="0.000001" max="0.1" step="any" value="0.0003"><small>Enter any decimal from 0.000001 to 0.1 (for example, 0.0003).</small></div>
+              <div class="field"><label for="grad-acc">Gradient accumulation steps</label><select id="grad-acc"><option>4</option><option>8</option><option>16</option><option>32</option></select></div>
+            </div>
+            <details id="scratch-settings" open>
+              <summary style="cursor:pointer;color:var(--mint);font-size:12px;font-weight:700;margin:10px 0">From-scratch Transformer size</summary>
+              <p class="hint">These settings apply only to randomly initialized models. The local default is deliberately compact for a 6 GB GPU.</p>
+              <div class="form-grid">
+                <div class="field"><label for="hidden-size">Hidden size</label><select id="hidden-size"><option selected>128</option><option>256</option><option>384</option><option>512</option></select></div>
+                <div class="field"><label for="layers">Transformer layers</label><select id="layers"><option selected>2</option><option>4</option><option>6</option><option>8</option></select></div>
+                <div class="field"><label for="heads">Attention heads</label><select id="heads"><option>2</option><option selected>4</option><option>6</option><option>8</option></select></div>
+                <div class="field"><label for="vocab">Tokenizer vocabulary size</label><select id="vocab"><option>4000</option><option selected>4096</option><option>8000</option><option>16000</option></select></div>
+              </div>
+            </details>
+          </div>
+          <div class="notice">Validation loss is monitored during training. At the end, up to 200 held-out test examples are scored once and saved with the model in Models. Test data is not used for training; reviewer approval is still required before activation.</div>
+          <div class="actions"><span id="form-message" class="status-line">Training uses the local GPU when selected and available.</span><button class="btn primary" id="start-button" type="submit">Start training →</button></div>
+        </form>
+      </section>
+      <aside class="right-stack">
+        <section class="card">
+          <div class="section-head"><div><h2>Local hardware</h2><p class="hint">Training stays on this PC.</p></div><span class="badge" id="hardware-badge">Checking</span></div>
+          <div class="hardware">
+            <div class="metric"><span>Device</span><b id="gpu-name">Checking…</b></div>
+            <div class="metric"><span>Available</span><b id="gpu-state">—</b></div>
+          </div>
+          <p class="foot">The default scratch model is small so it can fit locally. Fine-tuning loads the base model and may need smaller sequences or CPU mode if VRAM is tight.</p>
+        </section>
+        <section class="card">
+          <div class="section-head"><div><h2>Training run</h2><p class="hint" id="active-run-subtitle">Live progress for the current run.</p></div><span class="badge" id="run-status">Idle</span></div>
+          <div id="no-active-run" class="empty">No training is running. Start a run to see live progress here; completed runs remain in Recent runs.</div>
+          <div id="active-run" class="hidden">
+            <div class="job-title" id="active-run-title">—</div>
+            <div class="job-sub" id="active-run-stage">Waiting for a run</div>
+            <div class="progress-wrap"><div class="progress-fill" id="progress-fill"></div></div>
+            <div class="kpis"><div class="metric"><span>Progress</span><b id="progress-text">0%</b></div><div class="metric"><span>Elapsed</span><b id="elapsed">—</b></div><div class="metric"><span>ETA</span><b id="eta">—</b></div><div class="metric"><span>Train loss</span><b id="loss">—</b></div><div class="metric"><span>GPU memory</span><b id="gpu-memory">—</b></div></div>
+            <div class="actions"><span id="run-note" class="status-line"></span><div class="inline"><button class="btn hidden" id="resume-button" type="button">Resume from checkpoint</button><button class="btn" id="cancel-button" type="button">Cancel</button></div></div>
+            <h3 style="margin-top:16px">Run log</h3><div class="log" id="run-log" aria-live="polite"></div>
+          </div>
+        </section>
+        <section class="card">
+          <div class="section-head"><div><h2>Recent runs</h2><p class="hint">Select a run to keep it or delete its history and generated artifacts.</p></div><button class="btn" id="refresh-runs" type="button">Refresh</button></div>
+          <div id="run-list" class="empty">Loading runs…</div>
+        </section>
+      </aside>
+    </div>
+    </div>
+  </main>
+  <script src="api-config.js?v=20261125-catalog-startup"></script>
+  <script>
+    const $ = id => document.getElementById(id);
+    const app = { target: "expert", trainingDataset: null, evalDataset: null, jobId: null, eventSource: null, startedAt: null, stage: null, stageStartedAt: null, progress: 0, timer: null, selectedRunId: null };
+    const terminal = new Set(["built_evaluation_required", "built_evaluated", "failed", "cancelled"]);
+    function safeText(element, value) { element.textContent = value == null ? "" : String(value); }
+    function setChoiceCards(container) {
+      container.querySelectorAll(".choice").forEach(card => {
+        const input = card.querySelector("input");
+        card.classList.toggle("active", Boolean(input && input.checked));
+      });
+    }
+    function currentApproach() { return document.querySelector('input[name="approach"]:checked').value; }
+    document.querySelectorAll('input[name="target"]').forEach(input => input.addEventListener("change", () => {
+      app.target = input.value; setChoiceCards($("target-choices"));
+      $("domain-field").classList.toggle("hidden", app.target === "orchestrator");
+      $("routing-hints-field").classList.toggle("hidden", app.target === "orchestrator");
+      $("train-file").accept = app.target === "orchestrator" ? ".csv,.jsonl" : ".txt,.csv,.jsonl,.pdf";
+      $("eval-file").accept = $("train-file").accept;
+      safeText($("data-format-help"), app.target === "orchestrator"
+        ? "Orchestrator classifier: CSV/JSONL with message and route columns (or query and label). Example labels: mornork, finance-expert-id. Use split=train, validation, test; without split, Mornork creates deterministic 80/10/10 holdouts. Held-out labels must also appear in train."
+        : "Expert answer model: TXT/PDF corpus or CSV/JSONL with prompt and response columns. Use split=train, validation, test for separate holdouts; otherwise Mornork creates a fixed-seed 80/10/10 split. Rows marked approved must have approved=true.");
+      app.trainingDataset = null; app.evalDataset = null;
+      $("train-file").value = ""; $("eval-file").value = "";
+      if (app.target === "orchestrator") { $("model-name").value = "Mornork Orchestrator v1"; $("domain").value = "Routing"; }
+      else { $("model-name").value = "Finance Expert v1"; $("domain").value = "Finance"; }
+    }));
+    document.querySelectorAll('input[name="approach"]').forEach(input => input.addEventListener("change", () => {
+      setChoiceCards($("approach-choices"));
+      const fineTune = currentApproach() === "fine_tune";
+      $("base-model-field").classList.toggle("hidden", !fineTune);
+      $("scratch-settings").classList.toggle("hidden", fineTune);
+      $("model-size-field").classList.toggle("hidden", fineTune);
+    }));
+    const sizeConfigs = {tiny:[128,2,4,4096,128],small:[256,4,4,8000,128],medium:[384,6,6,16000,256]};
+    $("model-size-preset").addEventListener("change", () => {
+      const values = sizeConfigs[$("model-size-preset").value]; if (!values) return;
+      ["hidden-size","layers","heads","vocab","sequence"].forEach((id,index) => $(id).value = String(values[index]));
+    });
+    async function uploadFile(inputId, statusId, type) {
+      const file = $(inputId).files[0];
+      const label = $(statusId);
+      if (!file) return null;
+      label.className = "upload-status"; safeText(label, `Uploading and validating ${file.name}…`);
+      const params = new URLSearchParams({ filename: file.name, name: file.name.replace(/\.[^.]+$/, ""), domain: app.target === "orchestrator" ? "Routing" : $("domain").value });
+      try {
+        const response = await fetch(mornorkApiUrl(`/api/training/datasets?${params}`), { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "Upload failed");
+        label.className = "upload-status ok"; safeText(label, `Validated · ${result.validation.rows} records/pages · ${result.dataset.id}`);
+        return result.dataset.id;
+      } catch (error) {
+        label.className = "upload-status error"; safeText(label, error.message); return null;
+      }
+    }
+    $("train-file").addEventListener("change", () => { app.trainingDataset = null; uploadFile("train-file", "train-upload-status", "training").then(id => app.trainingDataset = id); });
+    $("eval-file").addEventListener("change", () => { app.evalDataset = null; uploadFile("eval-file", "eval-upload-status", "evaluation").then(id => app.evalDataset = id); });
+    $("preview-data").addEventListener("click", async () => {
+      const button = $("preview-data"), output = $("data-preview"); button.disabled = true;
+      try {
+        if (!app.trainingDataset) app.trainingDataset = await uploadFile("train-file", "train-upload-status", "training");
+        if (!app.trainingDataset) throw new Error("Choose a training file first.");
+        const response = await fetch(mornorkApiUrl(`/api/training/datasets/${encodeURIComponent(app.trainingDataset)}/preview?limit=5`));
+        const data = await response.json(); if (!response.ok) throw new Error(data.detail || "Could not preview data");
+        safeText(output, JSON.stringify({dataset: data.dataset.name, rows: data.rows}, null, 2)); output.classList.remove("hidden");
+      } catch (error) { safeText(output, error.message); output.classList.remove("hidden"); }
+      finally { button.disabled = false; }
+    });
+    function addLog(event) {
+      const line = document.createElement("div"); line.className = "logline" + (event.level === "ERROR" ? " error" : "");
+      const time = event.created_at ? new Date(event.created_at).toLocaleTimeString() : "";
+      const visibleMetrics = Object.fromEntries(Object.entries(event.metrics || {}).filter(([key, value]) =>
+        key !== "task_metrics" && key !== "artifact_uri" && !key.startsWith("eval_") &&
+        !key.startsWith("task_evaluation_") && !key.startsWith("evaluation_") &&
+        (typeof value === "number" || typeof value === "string" || typeof value === "boolean")));
+      const metricText = Object.keys(visibleMetrics).length ? " · " + Object.entries(visibleMetrics).map(([k,v]) => `${k}=${typeof v === "number" ? v.toFixed(4) : v}`).join(" ") : "";
+      line.textContent = `${time} [${event.stage || "run"}] ${event.message || ""}${metricText}`;
+      $("run-log").appendChild(line); $("run-log").scrollTop = $("run-log").scrollHeight;
+      if (event.metrics && event.metrics.loss != null) safeText($("loss"), Number(event.metrics.loss).toFixed(4));
+      if (event.metrics && event.metrics.train_loss != null) safeText($("loss"), Number(event.metrics.train_loss).toFixed(4));
+      if (event.metrics && event.metrics.gpu_allocated_mb != null) safeText($("gpu-memory"), `${event.metrics.gpu_allocated_mb} MB allocated`);
+      if (event.stage && event.stage !== app.stage) { app.stage = event.stage; app.stageStartedAt = Date.now(); }
+      if (event.stage) safeText($("active-run-stage"), event.stage);
+      if (Number.isFinite(event.progress)) updateProgress(event.progress, event.stage);
+      if (event.stage === "complete") loadRuns();
+    }
+    function renderOverallEta() {
+      const progress = app.progress;
+      if (progress >= 100) { safeText($("eta"), "Done"); return; }
+      if (!app.startedAt || progress < 20) { safeText($("eta"), "—"); return; }
+      const elapsed = Math.max(0, (Date.now() - app.startedAt) / 1000);
+      const remainingMinutes = Math.ceil((elapsed * (100 - progress) / progress) / 60);
+      safeText($("eta"), `${Math.max(0, remainingMinutes)} min`);
+    }
+    function updateProgress(value) {
+      const receivedProgress = Math.max(0, Math.min(100, Number(value) || 0));
+      app.progress = Math.max(app.progress, receivedProgress);
+      const progress = app.progress;
+      $("progress-fill").style.width = `${progress}%`; safeText($("progress-text"), `${Math.round(progress)}%`);
+      renderOverallEta();
+    }
+    function elapsedText() {
+      if (!app.startedAt) return "—";
+      return `${Math.floor(Math.max(0, Date.now() - app.startedAt) / 60000)} min`;
+    }
+    function setJob(job) {
+      if (terminal.has(job.status)) {
+        if (app.eventSource) { app.eventSource.close(); app.eventSource = null; }
+        if (app.timer) { clearInterval(app.timer); app.timer = null; }
+        app.jobId = null; app.startedAt = null;
+        safeText($("active-run-subtitle"), "No training run is active.");
+        safeText($("run-status"), "Idle"); $("run-status").className = "badge";
+        $("active-run").classList.add("hidden"); $("no-active-run").classList.remove("hidden");
+        safeText($("no-active-run"), "No training is running. Start a run to see live progress here; completed runs remain in Recent runs.");
+        return;
+      }
+      const previousJobId = app.jobId;
+      if (previousJobId !== job.id) app.progress = 0;
+      app.jobId = job.id; app.startedAt = job.started_at ? new Date(job.started_at).getTime() : null;
+      if (job.stage && job.stage !== app.stage) { app.stage = job.stage; app.stageStartedAt = Date.now(); }
+      $("no-active-run").classList.add("hidden"); $("active-run").classList.remove("hidden");
+      safeText($("active-run-title"), `${job.model_name} · ${job.target} · ${job.approach === "scratch" ? "From scratch" : "LoRA fine-tune"}`);
+      safeText($("active-run-stage"), `${job.stage || "queued"}${job.error_message ? ` · ${job.error_message}` : ""}`);
+      safeText($("run-status"), job.status.replaceAll("_", " "));
+      $("run-status").className = "badge" + (job.status === "failed" ? " fail" : job.status === "queued" ? " warn" : "");
+      updateProgress(job.progress, job.stage);
+      $("cancel-button").disabled = terminal.has(job.status); $("cancel-button").classList.toggle("hidden", terminal.has(job.status));
+      $("run-note").textContent = ["built_evaluated", "built_evaluation_required"].includes(job.status) ? "Checkpoint and held-out metrics are saved. S3 models with saved evaluation results can be activated from Workflows." : job.status === "failed" ? "Open the worker log for details" : job.status === "cancelled" ? "Training process stopped; run cancelled." : "";
+      $("resume-button").classList.toggle("hidden", !["failed", "cancelled"].includes(job.status));
+      if (terminal.has(job.status)) { if (app.timer) clearInterval(app.timer); app.timer = null; }
+      else if (!app.timer) app.timer = setInterval(() => { safeText($("elapsed"), elapsedText()); renderOverallEta(); }, 1000);
+      safeText($("elapsed"), elapsedText());
+    }
+    function connectEvents(jobId) {
+      if (app.eventSource) app.eventSource.close();
+      $("run-log").replaceChildren();
+      const source = new EventSource(mornorkApiUrl(`/api/training/jobs/${encodeURIComponent(jobId)}/events`)); app.eventSource = source;
+      source.onmessage = event => { try { addLog(JSON.parse(event.data)); } catch {} };
+      source.onerror = () => { refreshJob(jobId, false); };
+    }
+    async function refreshJob(jobId, reconnect = false) {
+      try {
+        const response = await fetch(mornorkApiUrl(`/api/training/jobs/${encodeURIComponent(jobId)}`)); if (!response.ok) return;
+        const { job } = await response.json(); setJob(job);
+        if (reconnect && !terminal.has(job.status)) connectEvents(jobId);
+        if (terminal.has(job.status) && app.eventSource) app.eventSource.close();
+      } catch {}
+    }
+    async function loadRuns() {
+      const response = await fetch(mornorkApiUrl("/api/training/jobs")); const result = await response.json(); const jobs = result.jobs || [];
+      const list = $("run-list"); list.replaceChildren();
+      if (!jobs.length) { list.className = "empty"; safeText(list, "No training runs yet."); return; }
+      list.className = "";
+      for (const job of jobs.slice(0, 12)) {
+        const card = document.createElement("div"); card.className = "job"; card.tabIndex = 0;
+        if (job.id === app.selectedRunId) card.classList.add("selected");
+        const top = document.createElement("div"); top.className = "job-top";
+        const title = document.createElement("span"); title.className = "job-title"; title.textContent = job.model_name;
+        const badges = document.createElement("span"); badges.className = "inline";
+        const badge = document.createElement("span"); badge.className = "badge" + (job.status === "failed" ? " fail" : job.status === "queued" ? " warn" : ""); badge.textContent = job.status.replaceAll("_", " ");
+        badges.appendChild(badge);
+        if (job.kept) { const kept = document.createElement("span"); kept.className = "badge kept"; kept.textContent = "Kept"; badges.appendChild(kept); }
+        top.append(title, badges); const sub = document.createElement("div"); sub.className = "job-sub"; sub.textContent = `${job.target} · ${job.approach} · ${new Date(job.created_at).toLocaleString()}`;
+        const actions = document.createElement("div"); actions.className = "run-actions" + (job.id === app.selectedRunId ? "" : " hidden");
+        const hint = document.createElement("span"); hint.className = "status-line";
+        const canDelete = terminal.has(job.status);
+        hint.textContent = canDelete ? "Deletes this run and its generated files; uploaded datasets stay." : "Cancel and wait for this run to stop before deleting it.";
+        const keepButton = document.createElement("button"); keepButton.className = "btn"; keepButton.type = "button"; keepButton.textContent = job.kept ? "Kept" : "Keep"; keepButton.disabled = Boolean(job.kept);
+        keepButton.addEventListener("click", async event => {
+          event.stopPropagation();
+          try {
+            const keptResponse = await fetch(mornorkApiUrl(`/api/training/jobs/${encodeURIComponent(job.id)}/keep`), { method: "POST" });
+            const keptResult = await keptResponse.json(); if (!keptResponse.ok) throw new Error(keptResult.detail || "Could not keep this run");
+            await loadRuns();
+          } catch (error) { alert(error.message); }
+        });
+        if (["failed", "cancelled"].includes(job.status)) {
+          const resumeButton = document.createElement("button"); resumeButton.className = "btn"; resumeButton.type = "button"; resumeButton.textContent = "Resume";
+          resumeButton.addEventListener("click", async event => {
+            event.stopPropagation(); resumeButton.disabled = true;
+            try {
+              const response = await fetch(mornorkApiUrl(`/api/training/jobs/${encodeURIComponent(job.id)}/resume`), { method: "POST" });
+              const result = await response.json(); if (!response.ok) throw new Error(result.detail || "Could not resume this run");
+              app.jobId = job.id; await refreshJob(job.id, true); await loadRuns();
+            } catch (error) { alert(error.message); resumeButton.disabled = false; }
+          });
+          actions.append(resumeButton);
+        }
+        const deleteButton = document.createElement("button"); deleteButton.className = "btn"; deleteButton.type = "button"; deleteButton.textContent = "Delete"; deleteButton.disabled = !canDelete;
+        deleteButton.addEventListener("click", async event => {
+          event.stopPropagation();
+          if (!canDelete || !confirm(`Delete run "${job.model_name}" and its generated checkpoint/history? Uploaded datasets will stay available.`)) return;
+          deleteButton.disabled = true;
+          try {
+            const deletedResponse = await fetch(mornorkApiUrl(`/api/training/jobs/${encodeURIComponent(job.id)}`), { method: "DELETE" });
+            const deletedResult = await deletedResponse.json(); if (!deletedResponse.ok) throw new Error(deletedResult.detail || "Could not delete this run");
+            if (app.eventSource && app.jobId === job.id) { app.eventSource.close(); app.eventSource = null; }
+            if (app.timer && app.jobId === job.id) { clearInterval(app.timer); app.timer = null; }
+            if (app.jobId === job.id) {
+              app.jobId = null; app.startedAt = null;
+              $("active-run").classList.add("hidden"); $("no-active-run").classList.remove("hidden");
+            }
+            if (app.selectedRunId === job.id) app.selectedRunId = null;
+            await loadRuns();
+          } catch (error) { alert(error.message); deleteButton.disabled = false; }
+        });
+        actions.append(hint, keepButton, deleteButton);
+        card.append(top, sub, actions);
+        const selectRun = () => { app.selectedRunId = job.id; if (terminal.has(job.status)) setJob(job); else { setJob(job); connectEvents(job.id); refreshJob(job.id); } list.querySelectorAll(".job").forEach(item => item.classList.toggle("selected", item === card)); list.querySelectorAll(".run-actions").forEach(item => item.classList.toggle("hidden", item !== actions)); };
+        card.addEventListener("click", event => { if (!event.target.closest(".run-actions")) selectRun(); });
+        card.addEventListener("keydown", event => { if (event.target === card && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); selectRun(); } });
+        list.appendChild(card);
+      }
+    }
+    $("refresh-runs").addEventListener("click", loadRuns);
+    $("cancel-button").addEventListener("click", async () => {
+      if (!app.jobId) return;
+      const jobId = app.jobId, button = $("cancel-button"); button.disabled = true;
+      safeText($("run-note"), "Stopping training process…");
+      try {
+        const response = await fetch(mornorkApiUrl(`/api/training/jobs/${encodeURIComponent(jobId)}/cancel`), { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "Unable to cancel this run");
+        safeText($("run-note"), "Training process stopped; run cancelled.");
+        await refreshJob(jobId, false); await loadRuns();
+      } catch (error) {
+        safeText($("run-note"), error.message);
+        button.disabled = false;
+      }
+    });
+    $("resume-button").addEventListener("click", async () => {
+      if (!app.jobId) return;
+      const button = $("resume-button"); button.disabled = true;
+      try {
+        const response = await fetch(mornorkApiUrl(`/api/training/jobs/${encodeURIComponent(app.jobId)}/resume`), { method: "POST" });
+        const result = await response.json(); if (!response.ok) throw new Error(result.detail || "Could not resume this run");
+        safeText($("run-note"), "Resuming from the latest saved checkpoint."); await refreshJob(app.jobId, true); await loadRuns();
+      } catch (error) { safeText($("run-note"), error.message); button.disabled = false; }
+    });
+    $("training-form").addEventListener("submit", async event => {
+      event.preventDefault(); const button = $("start-button"), message = $("form-message");
+      button.disabled = true; safeText(message, "Checking uploaded data…");
+      try {
+        if (!app.trainingDataset) app.trainingDataset = await uploadFile("train-file", "train-upload-status", "training");
+        if (!app.trainingDataset) throw new Error("Upload a valid training dataset first.");
+        if ($("eval-file").files[0] && !app.evalDataset) app.evalDataset = await uploadFile("eval-file", "eval-upload-status", "evaluation");
+        if ($("eval-file").files[0] && !app.evalDataset) throw new Error("Fix the evaluation dataset upload or remove it.");
+        const approach = currentApproach();
+        const body = {
+          target: app.target, model_name: $("model-name").value.trim(), domain: app.target === "orchestrator" ? "Routing" : $("domain").value,
+          description: $("description").value.trim(), routing_hints: app.target === "expert" ? $("routing-hints").value.split(/\r?\n/).map(value => value.trim()).filter(Boolean) : [], approach, architecture: "transformer",
+          base_model: approach === "fine_tune" ? $("base-model").value.trim() : null,
+          dataset_id: app.trainingDataset, eval_dataset_id: app.evalDataset,
+          config: {
+            epochs: Number($("epochs").value), learning_rate: Number($("lr").value), batch_size: Number($("batch").value),
+            gradient_accumulation_steps: Number($("grad-acc").value), sequence_length: Number($("sequence").value),
+            device: $("device").value, gradient_checkpointing: true, seed: 42,
+            hidden_size: Number($("hidden-size").value), layers: Number($("layers").value),
+            attention_heads: Number($("heads").value), vocab_size: Number($("vocab").value),
+            model_size_preset: $("model-size-preset").value
+          }
+        };
+        const response = await fetch(mornorkApiUrl("/api/training/jobs"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const result = await response.json(); if (!response.ok) throw new Error(result.detail || "Could not start training");
+        setJob(result.job); connectEvents(result.job.id); await loadRuns(); safeText(message, "Training run queued on this PC.");
+      } catch (error) { safeText(message, error.message); }
+      finally { button.disabled = false; }
+    });
+    async function loadHardware() {
+      try {
+        const response = await fetch(mornorkApiUrl("/api/status")); const data = await response.json();
+        const hasCuda = Boolean(data.cuda_available);
+        safeText($("gpu-name"), data.cuda_device_name || "CPU available");
+        safeText($("gpu-state"), hasCuda ? `${data.cuda_total_memory_mb} MB VRAM` : "CUDA unavailable");
+        safeText($("hardware-badge"), hasCuda ? "CUDA ready" : "CPU mode");
+      } catch { safeText($("gpu-name"), "Service unavailable"); safeText($("hardware-badge"), "Offline"); }
+    }
+    async function init() {
+      await Promise.all([loadHardware(), loadRuns()]);
+      const response = await fetch(mornorkApiUrl("/api/training/jobs")); const data = await response.json();
+      const active = (data.jobs || []).find(job => ["queued", "running"].includes(job.status));
+      if (active) { setJob(active); connectEvents(active.id); await refreshJob(active.id); }
+    }
+    init();
+  </script>
+</body>
+</html>
+
+
