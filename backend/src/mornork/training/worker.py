@@ -184,21 +184,21 @@ def _chat_ids(tokenizer: Any, messages: list[dict[str, str]], *, add_generation_
 
 
 class AnswerOnlyQADataset(Dataset):
-    """One prompt/answer row per item; mask prompt loss and fit long rows to the token window."""
+    """Mask prompt loss and fit answers to the token window without changing prompts."""
 
     def __init__(self, examples: list[dict[str, str]], tokenizer: Any, max_length: int,
-                 system_prompt: str, max_prompt_length: int | None = None) -> None:
+                 system_prompt: str, max_prompt_length: int | None = None,
+                 *, truncate_answers: bool = True, evaluation_only: bool = False) -> None:
         self.items: list[dict[str, list[int]]] = []
         self.prompt_ids: list[list[int]] = []
-        self.examples = examples
-        self.truncated_contexts = 0
+        self.examples: list[dict[str, str]] = []
+        self.skipped_prompts = 0
         self.truncated_responses = 0
         self.example_count = len(examples)
+        self.evaluation_only = evaluation_only
         if max_length < 16:
             raise ValueError("QA sequence length must be at least 16 tokens")
-        response_reserve = min(16, max_length - 1)
-        prompt_limit = min(max_length - response_reserve,
-                           max_prompt_length or max_length - response_reserve)
+        prompt_limit = min(max_length - 1, max_prompt_length or max_length - 1)
         eos_id = getattr(tokenizer, "eos_token_id", None)
 
         for index, example in enumerate(examples, start=1):
@@ -217,6 +217,8 @@ class AnswerOnlyQADataset(Dataset):
                 ]
                 if getattr(tokenizer, "chat_template", None):
                     prefix = _chat_ids(tokenizer, conversation, add_generation_prompt=True)
+                    if self.evaluation_only:
+                        return prefix, []
                     full = _chat_ids(tokenizer, conversation + response_messages, add_generation_prompt=False)
                     if full[:len(prefix)] != prefix:
                         raise ValueError("Tokenizer chat template does not keep the generation prompt as a prefix")
@@ -224,6 +226,8 @@ class AnswerOnlyQADataset(Dataset):
                 else:
                     prefix_text = (f"### System\n{system_prompt}\n\n### User\n{user}\n\n### Assistant\n")
                     prefix = [int(token) for token in tokenizer.encode(prefix_text, add_special_tokens=True)]
+                    if self.evaluation_only:
+                        return prefix, []
                     target = [int(token) for token in tokenizer.encode(answer, add_special_tokens=False)]
                     if eos_id is not None:
                         target.append(int(eos_id))
@@ -233,46 +237,39 @@ class AnswerOnlyQADataset(Dataset):
 
             context = example.get("context", "")
             prefix, target = encode(context)
-            original_target_length = len(target)
-            if len(prefix) > prompt_limit or len(prefix) + len(target) > max_length:
-                context_ids = tokenizer.encode(context, add_special_tokens=False) if context else []
-                lo, hi = 0, len(context_ids)
-                best: tuple[list[int], list[int]] | None = None
-                best_context_tokens = 0
-                while lo <= hi:
-                    keep = (lo + hi) // 2
-                    clipped = tokenizer.decode(context_ids[:keep], skip_special_tokens=True) if keep else ""
-                    candidate_prefix, candidate_target = encode(clipped)
-                    available_target_tokens = max_length - len(candidate_prefix)
-                    fitted_target = candidate_target[:available_target_tokens] if available_target_tokens > 0 else []
-                    if len(fitted_target) < len(candidate_target) and fitted_target and eos_id is not None:
-                        fitted_target[-1] = int(eos_id)
-                    if len(candidate_prefix) <= prompt_limit and fitted_target:
-                        best = (candidate_prefix, fitted_target)
-                        best_context_tokens = keep
-                        lo = keep + 1
-                    else:
-                        hi = keep - 1
-                if best is None:
-                    raise ValueError(
-                        f"Question and answer in row {index} do not fit sequence_length={max_length}; "
-                        "shorten the question/answer or select a longer sequence length"
-                    )
-                prefix, target = best
-                if context_ids and best_context_tokens < len(context_ids):
-                    self.truncated_contexts += 1
-            if len(target) < original_target_length:
+            # Always preserve the question. Training/validation answers may be
+            # shortened to the available window; held-out test references remain
+            # complete so the reported task metrics score the original targets.
+            if len(prefix) > prompt_limit:
+                self.skipped_prompts += 1
+                continue
+            if self.evaluation_only:
+                self.examples.append(example)
+                self.prompt_ids.append(prefix)
+                continue
+            available_answer_tokens = max_length - len(prefix)
+            if truncate_answers and len(target) > available_answer_tokens:
+                target = target[:available_answer_tokens]
+                if target and eos_id is not None:
+                    target[-1] = int(eos_id)
                 self.truncated_responses += 1
+            if not target:
+                self.skipped_prompts += 1
+                continue
 
             input_ids = prefix + target
             labels = ([-100] * len(prefix)) + target.copy()
+            self.examples.append(example)
             self.prompt_ids.append(prefix)
             self.items.append({"input_ids": input_ids, "attention_mask": [1] * len(input_ids), "labels": labels})
-        if not self.items:
-            raise ValueError("No usable prompt/response training records were produced")
+        if not self.prompt_ids:
+            raise ValueError(
+                f"No usable QA prompts fit sequence_length={max_length}; "
+                "select a longer sequence length or use shorter questions"
+            )
 
     def __len__(self) -> int:
-        return len(self.items)
+        return len(self.prompt_ids)
 
     def __getitem__(self, index: int) -> dict[str, list[int]]:
         return self.items[index]
@@ -882,29 +879,30 @@ def _train_expert(job: dict[str, Any], train_texts: list[str], validation_texts:
         )
         model_limit = (getattr(model.config, "max_position_embeddings", None)
                        or getattr(model.config, "n_positions", None))
-        prompt_limit = min(block_size, int(model_limit) - 16) if model_limit else block_size
+        prompt_limit = min(block_size, int(model_limit)) if model_limit else block_size
         train_set = AnswerOnlyQADataset(train_qa, tokenizer, block_size, system_prompt, prompt_limit)
         eval_set = AnswerOnlyQADataset(validation_qa, tokenizer, block_size, system_prompt, prompt_limit)
         all_test_qa = test_qa or []
-        selected_test_qa = all_test_qa
-        if len(selected_test_qa) > 200:
-            indices = sorted(random.Random(42).sample(range(len(selected_test_qa)), 200))
-            selected_test_qa = [selected_test_qa[index] for index in indices]
-        test_set = AnswerOnlyQADataset(selected_test_qa, tokenizer, block_size, system_prompt, prompt_limit)
+        # Keep the whole held-out split available for deterministic sampling. Only
+        # prompts must fit the input window; references stay complete for scoring.
+        test_set = AnswerOnlyQADataset(
+            all_test_qa, tokenizer, block_size, system_prompt, prompt_limit,
+            truncate_answers=False, evaluation_only=True,
+        )
         collator = AnswerOnlyCollator(tokenizer)
         task_evaluation = TaskEvaluationCallback(
             store, job["id"], model=model, tokenizer=tokenizer, qa_dataset=test_set,
             qa_available_count=len(all_test_qa),
             epochs=int(config.get("epochs", 1)),
         )
-        if (train_set.truncated_contexts or eval_set.truncated_contexts
+        if (train_set.skipped_prompts or eval_set.skipped_prompts or test_set.skipped_prompts
                 or train_set.truncated_responses or eval_set.truncated_responses):
             store.add_event(job["id"], level="WARN", stage="preparing_data", progress=13,
-                            message=(f"Clipped context in {train_set.truncated_contexts} training and "
-                                     f"{eval_set.truncated_contexts} validation rows; truncated long answers in "
-                                     f"{train_set.truncated_responses} training and "
-                                     f"{eval_set.truncated_responses} validation rows to fit the selected "
-                                     "sequence length. Increase sequence length to retain more answer text."))
+                            message=(f"Trimmed answers in {train_set.truncated_responses} training and "
+                                     f"{eval_set.truncated_responses} validation rows to sequence_length={block_size}; "
+                                     f"excluded {train_set.skipped_prompts} training, {eval_set.skipped_prompts} validation, "
+                                     f"and {test_set.skipped_prompts} test rows whose prompts alone exceed the window. "
+                                     "Test reference answers were kept complete for scoring."))
     else:
         train_set = TokenBlockDataset(train_texts, tokenizer, block_size)
         eval_set = TokenBlockDataset(validation_texts, tokenizer, block_size)
