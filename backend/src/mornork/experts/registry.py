@@ -12,7 +12,13 @@ from urllib.request import Request, urlopen
 
 import torch
 
-from ..modeling.generation import LocalChatModel
+from ..knowledge import (
+    LocalKnowledgeBase,
+    build_grounding_prompt,
+    has_wrong_jurisdiction_tax_terms,
+    source_line,
+)
+from ..modeling.generation import IncompleteGenerationError, LocalChatModel
 from ..routing.router import STANDARD_DOMAINS
 from ..routing.types import ExpertProfile
 
@@ -33,6 +39,7 @@ class ExpertRegistry:
         backend_api_key: str | None = None,
         audit_path: str | Path | None = None,
         shared_model: LocalChatModel | None = None,
+        knowledge_root: str | Path | None = None,
     ) -> None:
         self.profile_path = Path(profile_path).resolve()
         self.model_root = Path(model_root).resolve()
@@ -42,6 +49,8 @@ class ExpertRegistry:
         self.backend_api_key = backend_api_key
         self.audit_path = Path(audit_path).resolve() if audit_path else None
         self.shared_model = shared_model
+        root = knowledge_root or (self.profile_path.parent.parent / "data" / "knowledge")
+        self.knowledge = LocalKnowledgeBase(root)
         self._file_lock = threading.RLock()
         self._inference_lock = threading.Lock()
         self._loaded_path: Path | None = None
@@ -161,18 +170,74 @@ class ExpertRegistry:
         if not self.has_backend(row):
             raise FileNotFoundError("Expert backend is not configured")
 
+        documents = self.knowledge.retrieve(profile.domain, message)
         if row.get("inference_mode") == "mornork_role":
             if self.shared_model is None:
                 raise FileNotFoundError("The shared Mornork model is not loaded")
-            return self.shared_model.generate(message, system_prompt=row.get("system_prompt"))
+            system_prompt = build_grounding_prompt(
+                row.get("system_prompt"),
+                profile.domain,
+                message,
+                documents,
+                compact=bool(
+                    self.shared_model.context_limit
+                    and self.shared_model.context_limit <= 256
+                ),
+            )
+            answer = self._generate_with_reference_fallback(
+                self.shared_model, message, system_prompt, documents
+            )
+        else:
+            backend_url = str(row.get("backend_url") or "").strip()
+            if backend_url:
+                answer = self._call_backend(backend_url, request_data)
+            else:
+                model_path = self._resolve_model_path(str(row["model_path"]))
+                with self._inference_lock:
+                    model = self._load_model(model_path)
+                    system_prompt = build_grounding_prompt(
+                        row.get("system_prompt"),
+                        profile.domain,
+                        message,
+                        documents,
+                        compact=bool(model.context_limit and model.context_limit <= 256),
+                    )
+                    answer = self._generate_with_reference_fallback(
+                        model, message, system_prompt, documents
+                    )
 
-        backend_url = str(row.get("backend_url") or "").strip()
-        if backend_url:
-            return self._call_backend(backend_url, request_data)
-        model_path = self._resolve_model_path(str(row["model_path"]))
-        with self._inference_lock:
-            model = self._load_model(model_path)
-            return model.generate(message, system_prompt=row.get("system_prompt"))
+        if has_wrong_jurisdiction_tax_terms(profile.domain, message, answer):
+            withheld = (
+                "I withheld this response because it included U.S.-specific tax references "
+                "for an India-specific question. I can’t verify those claims as Indian tax "
+                "guidance. Please use the official Income Tax Department references or "
+                "consult a qualified Indian tax professional."
+            )
+            sources = source_line(documents)
+            return f"{withheld}\n\n{sources}" if sources else withheld
+
+        sources = source_line(documents)
+        if sources and not any(url in answer for document in documents for url in document.source_urls):
+            answer = f"{answer.rstrip()}\n\n{sources}"
+        return answer
+
+    @staticmethod
+    def _generate_with_reference_fallback(
+        model: LocalChatModel,
+        message: str,
+        system_prompt: str,
+        documents: list[Any],
+    ) -> str:
+        try:
+            return model.generate(message, system_prompt=system_prompt)
+        except IncompleteGenerationError:
+            for document in documents:
+                if document.fallback_answer:
+                    return (
+                        "The local model output was incomplete. Based on the retrieved reference: "
+                        + document.fallback_answer
+                    )
+            raise
 
     def _load_model(self, model_path: Path) -> LocalChatModel:
         with self._loaded_model_lock:

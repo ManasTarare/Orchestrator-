@@ -6,6 +6,7 @@ import threading
 import re
 import json
 from collections.abc import Mapping
+from typing import Any
 from pathlib import Path
 
 import torch
@@ -14,20 +15,37 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from .upcycle import load_upcycled_model
 
 
+class IncompleteGenerationError(RuntimeError):
+    """Raised when a checkpoint emits no complete sentence."""
+
+
 def _drop_incomplete_tail(text: str) -> str:
-    """Avoid presenting an unfinished final sentence when generation hits its token cap."""
+    """Avoid presenting an unfinished final sentence or fragment as a complete answer."""
     value = text.rstrip()
     if re.search(r"[.!?](?:[\"'’”»)}\]]|\*\*)*\s*$", value):
         return value
     boundaries = list(re.finditer(r"[.!?](?=(?:[\"'’”»)}\]]|\*\*)*(?:\s|$))", value))
     if not boundaries:
-        return "I reached the response length limit before completing the answer. Please ask for a shorter version."
+        return ""
     end = boundaries[-1].end()
     while end < len(value) and value[end] in "\"'’”»)}] ":
         end += 1
     if value[end:end + 2] == "**":
         end += 2
     return value[:end].rstrip()
+
+
+def _model_context_limit(model: Any) -> int | None:
+    config = getattr(model, "config", None)
+    for name in ("max_position_embeddings", "n_positions", "n_ctx", "max_sequence_length", "seq_length"):
+        value = getattr(config, name, None)
+        try:
+            limit = int(value)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if 0 < limit < 10_000_000:
+            return limit
+    return None
 
 
 class LocalChatModel:
@@ -91,6 +109,7 @@ class LocalChatModel:
                 device=device,
             )
         self.model = self.model.eval()
+        self.context_limit = _model_context_limit(self.model)
         self._generation_lock = threading.Lock()
 
     def offload_for_training(self) -> bool:
@@ -118,8 +137,12 @@ class LocalChatModel:
             raise ValueError("message cannot be blank")
         conversation = []
         response_style = (
-            "Keep the answer concise: use a few sentences or at most five short bullets. "
-            "Finish every sentence. Do not start a new section or bullet unless you can complete it."
+            "Be concise."
+            if self.context_limit is not None and self.context_limit <= 256
+            else (
+                "Keep the answer concise: use a few sentences or at most five short bullets. "
+                "Finish every sentence. Do not start a new section or bullet unless you can complete it."
+            )
         )
         prompt = system_prompt.strip() if system_prompt and system_prompt.strip() else ""
         system_content = f"{prompt}\n\n{response_style}" if prompt else response_style
@@ -150,9 +173,31 @@ class LocalChatModel:
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.device)
 
+        effective_max_new_tokens = self.max_new_tokens
+        if self.context_limit is not None:
+            output_reserve = min(self.max_new_tokens, max(8, self.context_limit // 3))
+            prompt_limit = max(1, self.context_limit - output_reserve)
+            prompt_length = int(input_ids.shape[-1])
+            if prompt_length > prompt_limit:
+                keep_prefix = min(max(8, prompt_limit // 4), prompt_limit - 1)
+                keep_suffix = prompt_limit - keep_prefix
+                input_ids = torch.cat(
+                    (input_ids[..., :keep_prefix], input_ids[..., -keep_suffix:]),
+                    dim=-1,
+                )
+                if attention_mask is not None:
+                    attention_mask = torch.cat(
+                        (attention_mask[..., :keep_prefix], attention_mask[..., -keep_suffix:]),
+                        dim=-1,
+                    )
+            effective_max_new_tokens = min(
+                self.max_new_tokens,
+                max(1, self.context_limit - int(input_ids.shape[-1])),
+            )
+
         generation_args = {
             "input_ids": input_ids,
-            "max_new_tokens": self.max_new_tokens,
+            "max_new_tokens": effective_max_new_tokens,
             "do_sample": False,
             "pad_token_id": self.tokenizer.pad_token_id,
         }
@@ -161,13 +206,11 @@ class LocalChatModel:
 
         with self._generation_lock, torch.inference_mode():
             output = self.model.generate(**generation_args)
-        generated_tokens = output.shape[-1] - input_ids.shape[-1]
         answer = self.tokenizer.decode(
             output[0, input_ids.shape[-1] :],
             skip_special_tokens=True,
         ).strip()
-        if generated_tokens >= self.max_new_tokens:
-            answer = _drop_incomplete_tail(answer)
+        answer = _drop_incomplete_tail(answer)
         if not answer:
-            raise RuntimeError("Mornork generated an empty response")
+            raise IncompleteGenerationError("The model did not produce a complete sentence")
         return answer

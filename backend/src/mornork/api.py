@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import csv
 from collections import Counter
+from datetime import datetime, timezone
 import json
 import os
 import re
@@ -34,9 +35,10 @@ from .modeling.routing import LocalRouteModel
 from .paths import project_root
 from .routing.audit import JsonlDecisionLog
 from .routing.embeddings import SentenceTransformerEmbedder
+from .routing.intents import IntentRule, load_intent_rules, match_configured_intent
 from .routing.policy import RoutingThresholds
 from .routing.router import MornorkRouter, STANDARD_DOMAINS
-from .routing.types import ExpertProfile, RouteAction, RoutingDecision, RoutingScore
+from .routing.types import DomainScore, ExpertProfile, RouteAction, RoutingDecision, RoutingScore
 from .training.manager import TrainingManager
 from .training.artifacts import ModelArtifactStore
 from .training.data import deterministic_route_splits, is_approved, load_route_examples, read_records, row_split
@@ -94,6 +96,8 @@ class Settings:
     embedding_model_id: str
     experts_file: Path
     thresholds_file: Path
+    intent_rules_file: Path
+    knowledge_root: Path
     audit_log: Path
     expert_audit_log: Path
     checkpoint: Path
@@ -126,6 +130,8 @@ class Settings:
             embedding_model_id=os.environ.get("MORNORK_EMBEDDING_MODEL_ID", "sentence-transformers/all-MiniLM-L6-v2"),
             experts_file=project_path("MORNORK_EXPERTS_FILE", "config/experts.json"),
             thresholds_file=project_path("MORNORK_THRESHOLDS_FILE", "config/routing.thresholds.json"),
+            intent_rules_file=project_path("MORNORK_INTENT_RULES_FILE", "config/routing.intent-rules.json"),
+            knowledge_root=project_path("MORNORK_KNOWLEDGE_ROOT", "data/knowledge"),
             audit_log=project_path("MORNORK_AUDIT_LOG", "logs/routing.jsonl"),
             expert_audit_log=project_path("MORNORK_EXPERT_AUDIT_LOG", "logs/experts.audit.jsonl"),
             checkpoint=project_path("MORNORK_CHECKPOINT", "artifacts/mornork-0.6b"),
@@ -315,6 +321,9 @@ class ServiceState:
             else:
                 raise
         self.decision_log = JsonlDecisionLog(settings.audit_log)
+        self.intent_rules: tuple[IntentRule, ...] = load_intent_rules(settings.intent_rules_file)
+        self.handoff_audit_path = settings.expert_audit_log.with_name("handoff-errors.jsonl")
+        self._handoff_audit_lock = threading.Lock()
         self.training_store = TrainingStore(
             settings.training_database,
             settings.training_dataset_root,
@@ -344,6 +353,7 @@ class ServiceState:
             backend_api_key=settings.expert_backend_api_key,
             audit_path=settings.expert_audit_log,
             shared_model=self.chat_model,
+            knowledge_root=settings.knowledge_root,
         )
         self.training_manager = TrainingManager(
             self.training_store,
@@ -380,6 +390,106 @@ class ServiceState:
                 self._orchestrator_model = None
                 self._orchestrator_model_id = None
 
+    def _route_by_configured_intent(
+        self,
+        workspace_id: str,
+        message_id: str,
+        message: str,
+    ) -> RoutingDecision | None:
+        rule = match_configured_intent(message, self.intent_rules)
+        if rule is None:
+            return None
+        experts = [
+            profile
+            for profile in self.routable_profiles_by_id(workspace_id).values()
+            if profile.domain.casefold() == rule.domain.casefold()
+        ]
+        expert_scores = tuple(
+            RoutingScore(
+                target_id=profile.expert_id,
+                name=profile.name,
+                domain=profile.domain,
+                version=profile.version,
+                score=1.0,
+                inference_mode=profile.inference_mode,
+            )
+            for profile in experts
+        )
+        domain_scores = (DomainScore(domain=rule.domain, score=1.0),)
+        if not experts:
+            decision = RoutingDecision(
+                workspace_id=workspace_id,
+                message_id=message_id,
+                action=RouteAction.DECLINE_CREATE_EXPERT,
+                reason=f"configured_intent_without_ready_{rule.domain.casefold().replace(' ', '_')}_expert",
+                domain_scores=domain_scores,
+                mornork_version=APP_VERSION,
+                score_type="configured_intent_rule",
+            )
+        elif len(experts) == 1:
+            decision = RoutingDecision(
+                workspace_id=workspace_id,
+                message_id=message_id,
+                action=RouteAction.HANDOFF,
+                reason=f"configured_intent_match:{rule.rule_id}",
+                expert_scores=expert_scores,
+                domain_scores=domain_scores,
+                chosen_expert_ids=(experts[0].expert_id,),
+                mornork_version=APP_VERSION,
+                score_type="configured_intent_rule",
+            )
+        else:
+            candidate_ids = tuple(profile.expert_id for profile in experts)
+            decision = RoutingDecision(
+                workspace_id=workspace_id,
+                message_id=message_id,
+                action=RouteAction.ASK_USER,
+                reason=f"configured_intent_multiple_{rule.domain.casefold().replace(' ', '_')}_experts",
+                expert_scores=expert_scores,
+                domain_scores=domain_scores,
+                candidate_expert_ids=candidate_ids,
+                user_options=candidate_ids + ("both",),
+                mornork_version=APP_VERSION,
+                score_type="configured_intent_rule",
+            )
+        self.decision_log.write(decision)
+        return decision
+
+    def record_handoff_failure(
+        self,
+        *,
+        message_id: str,
+        expert_id: str,
+        expert_name: str,
+        expert_version: str | int | None,
+        failure_type: str,
+        http_status: int | None = None,
+    ) -> None:
+        """Persist a safe diagnostic without writing user prompts or exception text."""
+        record = {
+            "event": "expert_handoff_failed",
+            "message_id": message_id,
+            "expert_id": expert_id,
+            "expert_name": expert_name,
+            "expert_version": expert_version,
+            "failure_type": failure_type,
+            "http_status": http_status,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            self.handoff_audit_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._handoff_audit_lock:
+                with self.handoff_audit_path.open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+                    stream.flush()
+        except OSError as error:
+            print(f"Could not write handoff diagnostic ({type(error).__name__}); message content omitted.")
+        status = f" http_status={http_status}" if http_status is not None else ""
+        print(
+            f"Expert handoff failed message_id={message_id} expert_id={expert_id} "
+            f"failure_type={failure_type}{status}; message content omitted."
+        )
+
     def _get_active_orchestrator(self) -> tuple[dict[str, Any], LocalChatModel | LocalRouteModel] | None:
         version = self.training_store.get_active_model("orchestrator")
         if version is None:
@@ -412,13 +522,9 @@ class ServiceState:
         if isinstance(model, LocalRouteModel):
             label, confidence = model.predict(message)
             if label.casefold() in {"mornork", "answer", "answer_self", "default"}:
-                decision = RoutingDecision(
-                    workspace_id=workspace_id, message_id=message_id, action=RouteAction.ANSWER_SELF,
-                    reason="trained_orchestrator_mornork_class", mornork_version=APP_VERSION,
-                    score_type="model_confidence", orchestrator_model_version=version["version"],
-                )
-                self.decision_log.write(decision)
-                return decision
+                # A route classifier may predate the current expert roster. Let the
+                # live semantic router check newly activated specialists before answering.
+                return None
             expert = allowed.get(label)
             if expert is None:
                 expert = next((item for item in profiles if item.domain.casefold() == label.casefold()
@@ -479,12 +585,8 @@ class ServiceState:
                 for expert_id in chosen
             )
             if not chosen:
-                decision = RoutingDecision(
-                    workspace_id=workspace_id, message_id=message_id, action=RouteAction.ANSWER_SELF,
-                    reason="trained_orchestrator_no_match", expert_scores=score_rows,
-                    mornork_version=APP_VERSION, score_type="model_confidence",
-                    orchestrator_model_version=version["version"],
-                )
+                # Empty/old router labels are not proof that no current expert fits.
+                return None
             elif confidence < 0.70:
                 return None
             elif len(chosen) > 1:
@@ -516,6 +618,9 @@ class ServiceState:
             return None
 
     def route(self, workspace_id: str, message_id: str, message: str) -> RoutingDecision:
+        configured_intent = self._route_by_configured_intent(workspace_id, message_id, message)
+        if configured_intent is not None:
+            return configured_intent
         trained_decision = self._route_with_active_orchestrator(workspace_id, message_id, message)
         if trained_decision is not None:
             return trained_decision
@@ -2149,11 +2254,26 @@ async def _handoff_events(
 
     def call(expert: ExpertProfile) -> dict[str, Any]:
         endpoint = (expert.inference_url or state.settings.expert_inference_url).strip()
-        body = json.dumps({
+        expert_request = {
             **request_base,
             "expert_id": expert.expert_id,
             "expert_version": expert.version,
-        }, ensure_ascii=False).encode("utf-8")
+        }
+        if endpoint.rstrip("/").casefold() == state.settings.expert_inference_url.rstrip("/").casefold():
+            # The default endpoint is this same FastAPI process. Calling it over
+            # localhost adds a needless HTTP timeout while a local checkpoint loads.
+            try:
+                answer = state.registry.infer(expert_request)
+                if not isinstance(answer, str) or not answer.strip():
+                    raise ValueError("Expert inference returned no answer")
+                return {"profile": expert, "answer": answer.strip()}
+            except Exception as error:
+                return {
+                    "profile": expert,
+                    "error_type": type(error).__name__,
+                    "http_status": None,
+                }
+        body = json.dumps(expert_request, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if state.settings.expert_api_key:
             headers["Authorization"] = f"Bearer {state.settings.expert_api_key}"
@@ -2166,17 +2286,48 @@ async def _handoff_events(
                 raise ValueError("Expert API returned no answer")
             return {"profile": expert, "answer": answer.strip()}
         except Exception as error:
-            return {"profile": expert, "error": type(error).__name__}
+            return {
+                "profile": expert,
+                "error_type": type(error).__name__,
+                "http_status": getattr(error, "code", None),
+            }
 
     results = await asyncio.gather(*(asyncio.to_thread(call, expert) for expert in selected))
     successes = [item for item in results if "answer" in item]
     failures = [item for item in results if "answer" not in item]
     for expert_id in missing:
-        yield _sse("expert_unavailable", {"expert_id": expert_id, "name": expert_id})
+        state.record_handoff_failure(
+            message_id=message_id,
+            expert_id=expert_id,
+            expert_name=expert_id,
+            expert_version=None,
+            failure_type="not_active_or_routable",
+        )
+        yield _sse("expert_unavailable", {
+            "expert_id": expert_id,
+            "name": expert_id,
+            "reason": "not_active_or_routable",
+        })
     if failures:
         for item in failures:
             expert = item["profile"]
-            yield _sse("expert_unavailable", {"expert_id": expert.expert_id, "name": expert.name, "domain": expert.domain})
+            failure_type = str(item.get("error_type") or "InferenceError")
+            http_status = item.get("http_status")
+            state.record_handoff_failure(
+                message_id=message_id,
+                expert_id=expert.expert_id,
+                expert_name=expert.name,
+                expert_version=expert.version,
+                failure_type=failure_type,
+                http_status=http_status if isinstance(http_status, int) else None,
+            )
+            reason = f"HTTP {http_status}" if isinstance(http_status, int) else failure_type
+            yield _sse("expert_unavailable", {
+                "expert_id": expert.expert_id,
+                "name": expert.name,
+                "domain": expert.domain,
+                "reason": reason,
+            })
     for item in successes:
         expert = item["profile"]
         yield _sse("answer", {
@@ -2189,7 +2340,23 @@ async def _handoff_events(
         })
     if failures or missing:
         fallback = await asyncio.to_thread(state.chat_model.generate, payload.message)
-        yield _sse("answer", {"by": "Mornork fallback", "version": APP_VERSION, "text": fallback})
+        unavailable = [
+            {
+                "name": item["profile"].name,
+                "reason": (
+                    f"HTTP {item['http_status']}"
+                    if isinstance(item.get("http_status"), int)
+                    else str(item.get("error_type") or "InferenceError")
+                ),
+            }
+            for item in failures
+        ] + [{"name": expert_id, "reason": "not active or routable"} for expert_id in missing]
+        yield _sse("answer", {
+            "by": "Mornork fallback",
+            "version": APP_VERSION,
+            "text": fallback,
+            "unavailable_experts": unavailable,
+        })
 
     try:
         state.decision_log.write(RoutingDecision(

@@ -89,7 +89,14 @@
       conversation.scrollTop = conversation.scrollHeight;
     }
     function sourceLabel(reply) {
-      if (reply.by === "Mornork fallback") return "Answered by Mornork fallback";
+      if (reply.by === "Mornork fallback") {
+        const unavailable = (reply.unavailable_experts || [])
+          .map(item => (item.name || "Specialist") + " unavailable (" + (item.reason || "inference failed") + ")")
+          .join("; ");
+        return unavailable
+          ? "Answered by Mornork fallback · " + unavailable
+          : "Answered by Mornork fallback";
+      }
       if (reply.by === "Mornork") {
         const version = lastDecision?.orchestrator_model_version;
         return version ? `Answered by ORK orchestrator · v${version}` : "Answered by ORK orchestrator";

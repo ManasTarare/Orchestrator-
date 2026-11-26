@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "india-income-tax",
+      "domain": "Finance",
+      "priority": 140,
+      "patterns": [
+        "\\bform\\s*16\\b",
+        "\\bform\\s*26as\\b",
+        "\\bannual information statement\\b",
+        "\\bais\\b",
+        "\\bitr(?:-\\d+)?\\b",
+        "\\b(income[- ]tax|tax return|tax filing)\\b"
+      ]
+    },
+    {
+      "id": "legal-remedy-or-contract",
+      "domain": "Legal",
+      "priority": 130,
+      "patterns": [
+        "\\blegal remedies?\\b",
+        "\\bunder (?:indian )?contract law\\b",
+        "\\bbreach(?:ed| of)? (?:a )?(?:written )?contract\\b",
+        "\\bcontract (?:was )?breach(?:ed)?\\b",
+        "\\btenant\\b|\\blandlord\\b|\\bsecurity deposit\\b|\\blease ends?\\b"
+      ]
+    },
+    {
+      "id": "consumer-rights-dispute",
+      "domain": "Legal",
+      "priority": 125,
+      "patterns": [
+        "\\bconsumer (?:rights?|protection|complaint|commission|forum)\\b",
+        "\\bdefective product\\b",
+        "\\bunsatisfactory response from (?:the )?seller\\b",
+        "\\bseller\\b.{0,80}\\b(refund|replace|complaint|consumer)\\b"
+      ]
+    },
+    {
+      "id": "healthcare-medical",
+      "domain": "Healthcare",
+      "priority": 120,
+      "patterns": [
+        "\\b(symptom|symptoms|diagnos(?:is|e)|treatment|medical care|clinician|doctor)\\b",
+        "\\b(allerg(?:y|ies|ic)|rhinitis|vaccine|blood pressure|hba1c|dehydrat(?:ion|ed))\\b"
+      ]
+    },
+    {
+      "id": "finance-interest-and-banking",
+      "domain": "Finance",
+      "priority": 110,
+      "patterns": [
+        "\\bcompound interest\\b",
+        "\\bfixed[- ]deposit\\b",
+        "\\b(interest rate|bank interest|investment return|profit margin|revenue growth)\\b"
+      ]
+    },
+    {
+      "id": "employment-hr",
+      "domain": "HR",
+      "priority": 80,
+      "patterns": [
+        "\\b(hiring|performance review|workplace policy|employee relations|payroll process)\\b",
+        "\\b(manager|employer)\\b.{0,60}\\b(workplace|staff|employee policy)\\b"
+      ]
+    },
+    {
+      "id": "product-customer-support",
+      "domain": "Customer support",
+      "priority": 70,
+      "patterns": [
+        "\\b(troubleshoot|locked account|login problem|invoice download|product setup)\\b",
+        "\\bhow do i use (?:this|the) (?:service|product|app)\\b"
+      ]
+    }
+  ]
+}
